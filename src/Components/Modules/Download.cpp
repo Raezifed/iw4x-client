@@ -12,6 +12,8 @@
 
 #include <mongoose.h>
 
+#include "GSC/Script.hpp" // HTTP
+
 #define MG_OVERRIDE_LOG_FN
 
 namespace Components
@@ -30,6 +32,8 @@ namespace Components
 	std::thread Download::ServerThread;
 	volatile bool Download::Terminate;
 	bool Download::ServerRunning;
+
+	std::vector<std::shared_ptr<Components::Download::ScriptDownload>> Components::Download::ScriptDownloads;
 
 	std::string Download::MongooseLogBuffer;
 
@@ -800,8 +804,193 @@ namespace Components
 
 #pragma endregion
 
+	Download::ScriptDownload::ScriptDownload(std::string url, unsigned int object)
+		: url_(std::move(url)), object_(object), webIO_(nullptr), done_(false)
+		, success_(false), notifyRequired_(false), totalSize_(0), currentSize_(0)
+	{
+		Game::AddRefToObject(this->getObject());
+	}
+
+	Download::ScriptDownload::~ScriptDownload()
+	{
+		if (this->getObject())
+		{
+			Game::RemoveRefToObject(this->getObject());
+			this->object_ = 0;
+		}
+
+		if (this->workerThread_.joinable())
+		{
+			this->workerThread_.join();
+		}
+
+		this->destroyWebIO();
+	}
+
+	void Download::ScriptDownload::startWorking()
+	{
+		if (!this->isWorking())
+		{
+			this->workerThread_ = std::thread(std::bind(&ScriptDownload::handler, this));
+		}
+	}
+
+	bool Download::ScriptDownload::isWorking() const
+	{
+		return this->workerThread_.joinable();
+	}
+
+	void Download::ScriptDownload::notifyProgress()
+	{
+		if (this->notifyRequired_)
+		{
+			this->notifyRequired_ = false;
+
+			if (Game::Scr_IsSystemActive())
+			{
+				Game::Scr_AddInt(static_cast<int>(this->totalSize_));
+				Game::Scr_AddInt(static_cast<int>(this->currentSize_));
+				Game::Scr_NotifyId(this->getObject(), static_cast<std::uint16_t>(Game::SL_GetString("progress", 0)), 2);
+			}
+		}
+	}
+
+	void Download::ScriptDownload::updateProgress(std::size_t currentSize, std::size_t totalSize)
+	{
+		this->currentSize_ = currentSize;
+		this->totalSize_ = totalSize;
+		this->notifyRequired_ = true;
+	}
+
+	void Download::ScriptDownload::notifyDone() const
+	{
+		if (!this->isDone()) return;
+
+		if (Game::Scr_IsSystemActive())
+		{
+			Game::Scr_AddString(this->result_.data()); // No binary data supported yet
+			Game::Scr_AddInt(this->success_);
+			Game::Scr_NotifyId(this->getObject(), static_cast<std::uint16_t>(Game::SL_GetString("done", 0)), 2);
+		}
+	}
+
+	bool Download::ScriptDownload::isDone() const
+	{
+		return this->done_;
+	}
+
+	std::string Download::ScriptDownload::getUrl() const
+	{
+		return this->url_;
+	}
+
+	unsigned int Download::ScriptDownload::getObject() const
+	{
+		return this->object_;
+	}
+
+	void Download::ScriptDownload::cancel() const
+	{
+		if (this->webIO_)
+		{
+			this->webIO_->cancelDownload();
+		}
+	}
+
+	void Download::ScriptDownload::handler()
+	{
+		this->destroyWebIO();
+
+		this->webIO_ = new Utils::WebIO("IW4x");
+		this->webIO_->setProgressCallback(std::bind(&ScriptDownload::updateProgress, this, std::placeholders::_1, std::placeholders::_2));
+
+		this->result_ = this->webIO_->get(this->url_, &this->success_);
+
+		this->destroyWebIO();
+		this->done_ = true;
+	}
+
+	void Download::ScriptDownload::destroyWebIO()
+	{
+		if (this->webIO_)
+		{
+			delete this->webIO_;
+			this->webIO_ = nullptr;
+		}
+	}
+
+
 	Download::Download()
 	{
+		//std::vector<std::shared_ptr<Download::ScriptDownload>> Download::ScriptDownloads;
+		Scheduler::Loop([]
+			{
+				auto workingCount = 0;
+
+				for (auto i = ScriptDownloads.begin(); i != ScriptDownloads.end();)
+				{
+					const auto& download = *i;
+					if (download->isDone())
+					{
+						download->notifyDone();
+						i = ScriptDownloads.erase(i);
+						continue;
+					}
+
+					if (download->isWorking())
+					{
+						download->notifyProgress();
+						++workingCount;
+					}
+
+					++i;
+				}
+
+				for (const auto& download : ScriptDownloads)
+				{
+					if (workingCount > 5) break;
+					if (!download->isWorking())
+					{
+						download->startWorking();
+						++workingCount;
+					}
+				}
+			}, Scheduler::Pipeline::SERVER);
+
+		Components::GSC::Script::AddFunction("httpGet", [] // gsc: httpGet(<url>)
+			{
+				if (Game::Scr_GetNumParam() != 1)
+				{
+					Game::Scr_Error("^1httpGet: Missing url\n");
+					return;
+
+				}
+				const auto* url = Game::Scr_GetString(0);
+
+				if (url == nullptr)
+				{
+					Game::Scr_ParamError(0, "^1httpGet: Illegal parameter!\n");
+					return;
+				}
+
+				const auto object = Game::AllocObject();
+				Game::Scr_AddObject(object);
+				ScriptDownloads.push_back(std::make_shared<ScriptDownload>(url, object));
+				Game::RemoveRefToObject(object);
+
+				/*Scheduler::Once([object, url]()
+					{
+						const auto response = Utils::http::get_data(url);
+				Game::Scr_AddString(response.value().data());
+
+				const auto value = response.has_value()
+					? response.value().substr(0, 0x5000)
+					: "";
+				Game::Scr_NotifyId(object, Game::SL_GetString("done", 0), 1);
+				Game::RemoveRefToObject(object);
+					}, Scheduler::Pipeline::SERVER);*/
+			});
+
 		AssertSize(Game::va_info_t, 0x804);
 		AssertSize(jmp_buf, 0x40);
 		AssertSize(Game::TraceThreadInfo, 0x8);

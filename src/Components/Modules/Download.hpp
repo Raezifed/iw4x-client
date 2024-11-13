@@ -4,6 +4,9 @@
 struct mg_connection;
 struct mg_http_message;
 
+#include <Utils/WebIO.hpp>
+
+
 namespace Components
 {
 	class Download : public Component
@@ -25,6 +28,53 @@ namespace Components
 		static Dvar::Var UIDlTimeLeft;
 		static Dvar::Var UIDlProgress;
 		static Dvar::Var UIDlTransRate;
+
+		class ScriptDownload : public Component
+		{
+		public:
+			ScriptDownload(std::string url, unsigned int object);
+			ScriptDownload(ScriptDownload&& other) noexcept = delete;
+			ScriptDownload& operator=(ScriptDownload&& other) noexcept = delete;
+
+			~ScriptDownload();
+
+			void startWorking();
+
+			[[nodiscard]] bool isWorking() const;
+
+			void notifyProgress();
+
+			void updateProgress(std::size_t currentSize, std::size_t totalSize);
+
+			void notifyDone() const;
+
+			[[nodiscard]] bool isDone() const;
+
+			[[nodiscard]] std::string getUrl() const;
+			[[nodiscard]] unsigned int getObject() const;
+
+			void cancel() const;
+
+		private:
+			std::string url_;
+			std::string result_;
+			unsigned int object_;
+			std::thread workerThread_;
+			Utils::WebIO* webIO_;
+
+			bool done_;
+			bool success_;
+			bool notifyRequired_;
+			std::size_t totalSize_;
+			std::size_t currentSize_;
+
+			void handler();
+
+			void destroyWebIO();
+		};
+
+		static std::vector<std::shared_ptr<ScriptDownload>> ScriptDownloads;
+
 
 	private:
 		class ClientDownload
