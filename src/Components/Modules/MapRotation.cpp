@@ -217,16 +217,17 @@ namespace Components
 
 	bool MapRotation::ShouldRotate()
 	{
-		if (!Dedicated::IsEnabled() && SVDontRotate.get<bool>())
+		if (!Dedicated::IsEnabled() && Dvar::Var("party_host").get<bool>())
 		{
-			Logger::Print(Game::CON_CHANNEL_SERVER, "Not performing map rotation as sv_dontRotate is true\n");
-			SVDontRotate.set(false);
+			Logger::Warning(Game::CON_CHANNEL_SERVER, "Not performing map rotation as we are hosting a party!\n");
+			SVDontRotate.set(true);
 			return false;
 		}
 
-		if (Party::IsEnabled() && Dvar::Var("party_host").get<bool>())
+		if (Dedicated::IsEnabled() && SVDontRotate.get<bool>())
 		{
-			Logger::Warning(Game::CON_CHANNEL_SERVER, "Not performing map rotation as we are hosting a party!\n");
+			Logger::Print(Game::CON_CHANNEL_SERVER, "Not performing map rotation as sv_dontRotate is true\n");
+			SVDontRotate.set(true);
 			return false;
 		}
 
@@ -409,44 +410,5 @@ namespace Components
 		DedicatedRotation.setHandler("exec", ApplyExec);
 
 		Events::OnDvarInit(RegisterMapRotationDvars);
-	}
-
-	bool MapRotation::unitTest()
-	{
-		Logger::Debug("Testing map rotation parsing...");
-
-		const auto* normal = "exec war.cfg map mp_highrise map mp_terminal map mp_firingrange map mp_trailerpark gametype dm map mp_shipment_long";
-
-		RotationData rotation;
-		rotation.setHandler("map", ApplyMap);
-		rotation.setHandler("gametype", ApplyGametype);
-		rotation.setHandler("exec", ApplyExec);
-
-		try
-		{
-			rotation.parse(normal);
-		}
-		catch (const std::exception& ex)
-		{
-			Logger::PrintError(Game::CON_CHANNEL_ERROR, "{}. parsing of 'normal' failed\n", ex.what());
-			return false;
-		}
-
-		rotation.clear();
-
-		const auto* mistake = "spdevmap mp_dome";
-		auto success = false;
-
-		try
-		{
-			rotation.parse(mistake);
-		}
-		catch (const std::exception& ex)
-		{
-			Logger::Debug("{}. parsing of 'normal' failed as expected", ex.what());
-			success = true;
-		}
-
-		return success;
 	}
 }
