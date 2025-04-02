@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include <Utils/InfoString.hpp>
 
 #include "Auth.hpp"
@@ -12,6 +11,7 @@
 #include "Stats.hpp"
 #include "TextRenderer.hpp"
 #include "Voice.hpp"
+#include "Events.hpp"
 
 #include <version.hpp>
 
@@ -40,6 +40,7 @@ namespace Components
 	std::map<std::uint64_t, Network::Address> Party::LobbyMap;
 
 	Dvar::Var Party::PartyEnable;
+	Dvar::Var Party::ServerVersion;
 
 	SteamID Party::GenerateLobbyId()
 	{
@@ -208,8 +209,13 @@ namespace Components
 			return;
 		}
 
+		Events::OnDvarInit([]
+		{
+			ServerVersion = Dvar::Register<const char*>("sv_version", "", Game::DVAR_SERVERINFO | Game::DVAR_INIT, "Server version");
+		});
+
 		PartyEnable = Dvar::Register<bool>("party_enable", Dedicated::IsEnabled(), Game::DVAR_NONE, "Enable party system");
-		Dvar::Register<bool>("xblive_privatematch", true, Game::DVAR_INIT, "");
+		Dvar::Register<bool>("xblive_privatematch", true, Game::DVAR_INIT, "private match");
 
 		// Kill the party migrate handler - it's not necessary and has apparently been used in the past for trickery?
 		Utils::Hook(0x46AB70, PartyMigrate_HandlePacket, HOOK_JUMP).install()->quick();
@@ -563,11 +569,13 @@ namespace Components
 						{
 							int clients;
 							int maxClients;
+							std::string version;
 
 							try
 							{
 								clients = std::stoi(Container.info.get("clients"));
 								maxClients = std::stoi(Container.info.get("sv_maxclients"));
+								version = Container.info.get("version");
 							}
 							catch ([[maybe_unused]] const std::exception& ex)
 							{
@@ -582,7 +590,7 @@ namespace Components
 							else
 							{
 								Dvar::Var("xblive_privateserver").set(true);
-
+								ServerVersion.set(version);
 								Game::Menus_CloseAll(Game::uiContext);
 
 								Game::_XSESSION_INFO hostInfo;

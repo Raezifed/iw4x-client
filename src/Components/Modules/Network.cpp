@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 namespace Components
 {
@@ -375,7 +374,7 @@ namespace Components
 
 		// Prevent recvfrom error spam
 		Utils::Hook(0x46531A, PacketErrorCheck, HOOK_JUMP).install()->quick();
-		
+
 		// Handle client packets
 		Utils::Hook(0x5AA703, CL_HandleCommandStub, HOOK_JUMP).install()->quick();
 

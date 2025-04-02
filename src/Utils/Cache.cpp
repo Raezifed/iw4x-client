@@ -1,12 +1,11 @@
-#include <STDInclude.hpp>
 #include "WebIO.hpp"
 
 namespace Utils
 {
 	const char* Cache::Urls[] =
 	{
-		"https://raw.githubusercontent.com/diamante0018/iw4x-client",
-		"https://alterware.dev",
+		"https://raw.githubusercontent.com/iw4x/iw4x-cache",
+		"https://iw4x.getserve.rs/v1",
 	};
 
 	std::string Cache::ValidUrl;

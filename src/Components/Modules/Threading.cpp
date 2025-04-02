@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include "Threading.hpp"
 
 namespace Components
@@ -106,7 +105,7 @@ namespace Components
 				pop eax
 				mov ecx, eax
 
-				mov edx, 1AD7934h // com_sv_running
+				mov edx, 1AD7934h // sv_running
 				cmp byte ptr [edx + 10h], 0
 
 				push 47DDC1h

@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include <Utils/InfoString.hpp>
 #include <Utils/WebIO.hpp>
 
@@ -347,18 +346,20 @@ namespace Components
 			Scheduler::Once([]
 			{
 				Game::Dvar_SetString(*Game::fs_gameDirVar, mod.data());
-				const_cast<Game::dvar_t*>((*Game::fs_gameDirVar))->modified = true;
 
+				Logger::Print("Mod {} downloaded!\n", mod);
 				mod.clear();
 
-				Command::Execute("closemenu mod_download_popmenu", false);
+				Command::Execute("closemenu mod_download_popmenu");
 
 				if (ModList::cl_modVidRestart.get<bool>())
 				{
-					Command::Execute("vid_restart", false);
+					Logger::Print("Restarting video...\n");
+					Command::Execute("vid_restart");
 				}
-
-				Command::Execute("reconnect", false);
+				
+				Logger::Print("Reconnecting to server...\n");
+				Command::Execute("reconnect");
 			}, Scheduler::Pipeline::MAIN);
 		}
 	}
@@ -502,7 +503,7 @@ namespace Components
 
 	std::optional<std::string> Download::InfoHandler([[maybe_unused]] mg_connection* c, [[maybe_unused]] const mg_http_message* hm)
 	{
-		if (!(*Game::com_sv_running)->current.enabled)
+		if (!(*Game::sv_running)->current.enabled)
 		{
 			// Game is not running ,cannot return info
 			return std::nullopt;

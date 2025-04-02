@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 // Unsorted function definitions
 namespace Game
@@ -194,6 +193,7 @@ namespace Game
 	UI_ReplaceConversions_t UI_ReplaceConversions = UI_ReplaceConversions_t(0x4E9740);
 	UI_ParseInfos_t UI_ParseInfos = UI_ParseInfos_t(0x4027A0);
 	UI_GetMapDisplayName_t UI_GetMapDisplayName = UI_GetMapDisplayName_t(0x420700);
+	UI_GetGameTypeDisplayName_t UI_GetGameTypeDisplayName = UI_GetGameTypeDisplayName_t(0x4EB0B0);
 	ParseConfigStringToStruct_t ParseConfigStringToStruct = ParseConfigStringToStruct_t(0x403B60);
 
 	Win_GetLanguage_t Win_GetLanguage = Win_GetLanguage_t(0x45CBA0);
@@ -225,13 +225,15 @@ namespace Game
 	IN_RecenterMouse_t IN_RecenterMouse = IN_RecenterMouse_t(0x463D80);
 
 	IN_MouseMove_t IN_MouseMove = IN_MouseMove_t(0x64C490);
+	IN_MouseEvent_t IN_MouseEvent = IN_MouseEvent_t(0x4C84D0);
+	IN_Frame_t IN_Frame = IN_Frame_t(0x475E10);
 	IN_Init_t IN_Init = IN_Init_t(0x45D620);
 	IN_Shutdown_t IN_Shutdown = IN_Shutdown_t(0x426360);
 
 	Touch_Item_t Touch_Item = Touch_Item_t(0x44FA20);
 
 	Add_Ammo_t Add_Ammo = Add_Ammo_t(0x4E1480);
-  
+
 	ClientUserinfoChanged_t ClientUserinfoChanged = ClientUserinfoChanged_t(0x445240);
 
 	player_die_t player_die = player_die_t(0x42BC70);
@@ -359,6 +361,8 @@ namespace Game
 
 	float (*penetrationDepthTable)[PENETRATE_TYPE_COUNT][SURF_TYPE_COUNT] = reinterpret_cast<float(*)[PENETRATE_TYPE_COUNT][SURF_TYPE_COUNT]>(0x7C4878);
 
+	char (*com_consoleLines)[32] = reinterpret_cast<char(*)[32]>(0x1AD7948);
+
 	WinMouseVars_t* s_wmv = reinterpret_cast<WinMouseVars_t*>(0x649D640);
 
 	int* window_center_x = reinterpret_cast<int*>(0x649D638);
@@ -368,7 +372,7 @@ namespace Game
 
 	int* g_waitingForKey = reinterpret_cast<int*>(0x63A50FC);
 
-	Material** whiteMaterial = reinterpret_cast<Material**>(0x8EE4B8);
+	Game::cgMedia_t* cgMedia = reinterpret_cast<Game::cgMedia_t*>(0x8EE4B8);
 
 	unsigned long* g_dwTlsIndex = reinterpret_cast<unsigned long*>(0x66D94A8);
 
@@ -397,6 +401,8 @@ namespace Game
 	bool* s_havePlaylists = reinterpret_cast<bool*>(0x1AD3680);
 
 	huffman_t* msgHuff = reinterpret_cast<huffman_t*>(0x1CB9EC0);
+
+	const char* logFileName = reinterpret_cast<const char*>(0x730130);
 
 	const char* TableLookup(StringTable* stringtable, int row, int column)
 	{

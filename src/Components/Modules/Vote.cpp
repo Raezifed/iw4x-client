@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include "ClientCommand.hpp"
 #include "MapRotation.hpp"
 #include "Vote.hpp"
@@ -43,7 +42,7 @@ namespace Components
 	int Vote::VotesRequired()
 	{
 		auto votesRequired = Vote::SV_VotesRequired.get<int>();
-		
+
 		if (votesRequired > 0)
 		{
 			return votesRequired;
@@ -250,7 +249,7 @@ namespace Components
 			IsInvalidVoteString(params->get(3)))
 		{
 			Game::SV_GameSendServerCommand(ent - Game::g_entities, Game::SV_CMD_CAN_IGNORE, VA("%c \"GAME_INVALIDVOTESTRING\"", 0x65));
-			return; 
+			return;
 		}
 
 		if (!(*Game::g_oldVoting)->current.enabled)

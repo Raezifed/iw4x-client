@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include "ConnectProtocol.hpp"
 #include "Console.hpp"
 
@@ -38,7 +37,7 @@ namespace Components
 
 		Console::FreeNativeConsole();
 
-		if (Loader::IsPerformingUnitTests() || Dedicated::IsEnabled() || ZoneBuilder::IsEnabled()) return;
+		if (Dedicated::IsEnabled() || ZoneBuilder::IsEnabled()) return;
 
 		Mutex = CreateMutexA(nullptr, FALSE, "iw4x_mutex");
 		FirstInstance = ((INVALID_HANDLE_VALUE != Mutex) && GetLastError() != ERROR_ALREADY_EXISTS);

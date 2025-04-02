@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 #include "Theatre.hpp"
 #include "UIFeeder.hpp"
@@ -327,7 +326,7 @@ namespace Components
 			tm time;
 			char buffer[1000] = {0};
 			localtime_s(&time, &info.timeStamp);
-			asctime_s(buffer, sizeof buffer, &time);
+			asctime_s(buffer, sizeof(buffer), &time);
 
 			Dvar::Var("ui_demo_mapname").set(info.mapname);
 			Dvar::Var("ui_demo_mapname_localized").set(Localization::LocalizeMapName(info.mapname.data()));
@@ -359,7 +358,7 @@ namespace Components
 			{
 				Logger::Print("Deleting old demo {}\n", files[i]);
 				FileSystem::_DeleteFile("demos", files[i]);
-				FileSystem::_DeleteFile("demos", std::format("%s.json", files[i]));
+				FileSystem::_DeleteFile("demos", std::format("{}.json", files[i]));
 			}
 
 			Command::Execute(Utils::String::VA("record auto_%lld", std::time(nullptr)), true);

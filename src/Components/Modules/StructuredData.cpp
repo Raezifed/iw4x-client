@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include "StructuredData.hpp"
 
 namespace Components
@@ -109,7 +108,7 @@ namespace Components
 			constexpr auto structIndex = 0;
 			{
 				auto strct = &data->structs[structIndex];
-				
+
 				auto newProperties = StructuredData::MemAllocator.allocateArray<Game::StructuredDataStructProperty>(strct->propertyCount);
 				std::memcpy(newProperties, strct->properties, strct->propertyCount * sizeof(Game::StructuredDataStructProperty));
 				strct->properties = newProperties;
@@ -314,7 +313,7 @@ namespace Components
 
 				// Reallocate the definition
 				auto* newData = StructuredData::MemAllocator.allocateArray<Game::StructuredDataDef>(data->defCount + patchDefinitions.size());
-				std::memcpy(&newData[patchDefinitions.size()], data->defs, sizeof Game::StructuredDataDef * data->defCount);
+				std::memcpy(&newData[patchDefinitions.size()], data->defs, sizeof(Game::StructuredDataDef) * data->defCount);
 
 				// Set the versions
 				for (unsigned int i = 0; i < patchDefinitions.size(); ++i)

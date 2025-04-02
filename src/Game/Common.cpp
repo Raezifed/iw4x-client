@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 namespace Game
 {
@@ -35,6 +34,9 @@ namespace Game
 	int* com_errorPrintsCount = reinterpret_cast<int*>(0x1AD7910);
 
 	int* errorcode = reinterpret_cast<int*>(0x1AD7EB4);
+
+	int* com_consoleLogOpenFailed = reinterpret_cast<int*>(0x1AD8F84);
+	int* opening_qconsole = reinterpret_cast<int*>(0x1AD8FA8);
 
 	char* Com_GetParseThreadInfo()
 	{
@@ -90,5 +92,10 @@ namespace Game
 		}
 
 		return result;
+	}
+
+	char* Com_GetCommandLine()
+	{
+		return reinterpret_cast<char*>(0x1AD7AB0);
 	}
 }

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include "Gamepad/Controller.hpp"
 
 namespace Components
@@ -24,6 +30,7 @@ namespace Components
 		static const int RUMBLE_CONFIGSTRINGS_COUNT = 32;
 
 		Gamepad();
+		~Gamepad();
 
 		static void OnMouseMove(int x, int y, int dx, int dy);
 
@@ -64,7 +71,7 @@ namespace Components
 		static GamePadGlobals gamePadGlobals[Game::MAX_GPAD_COUNT];
 		static std::mutex gamePadStateMutexes[Game::MAX_GPAD_COUNT];
 
-
+		static bool gamePadDataReady[Game::MAX_GPAD_COUNT];
 		static int gamePadBindingsModifiedFlags;
 
 		static Dvar::Var gpad_enabled;
@@ -137,7 +144,7 @@ namespace Components
 		static void CL_GamepadMove(int localClientNum, float frameTimeBase, Game::usercmd_s* cmd);
 		static void CL_MouseMove(int localClientNum, Game::usercmd_s* cmd, float frametime_base);
 		static void CL_MouseMove_Stub();
-		
+
 		static bool Gamepad_ShouldUse(const Game::gentity_s* playerEnt, unsigned useTime);
 		static void Player_UseEntity_Stub();
 
@@ -192,5 +199,8 @@ namespace Components
 		static void GetTriggerFeedbackForEquipment(const Game::playerState_s* playerState, bool primary, GamepadControls::GamepadAPI::TriggerFeedback& feedback);
 
 		static void UpdateForceFeedback(GamepadControls::Controller& api);
+
+		std::atomic<bool> run;
+		std::thread gamepadRefreshThread;
 	};
 }

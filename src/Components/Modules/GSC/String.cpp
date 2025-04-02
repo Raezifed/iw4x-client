@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 #include "Script.hpp"
 #include "String.hpp"
@@ -38,7 +37,7 @@ namespace Components::GSC
 				++i;
 			}
 
-			// Null terminating character was overwritten 
+			// Null terminating character was overwritten
 			if (i >= sizeof(out))
 			{
 				Game::Scr_Error("string too long");
@@ -67,7 +66,7 @@ namespace Components::GSC
 				Game::Scr_Error("GetChar: Illegal parameter!");
 				return;
 			}
-			
+
 			if (static_cast<std::size_t>(index) >= std::strlen(str))
 			{
 				Game::Scr_Error("GetChar: char index is out of bounds");

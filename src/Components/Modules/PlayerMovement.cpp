@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 #include "Events.hpp"
 #include "PlayerMovement.hpp"
@@ -133,7 +132,7 @@ namespace Components
 
 			push 0x4B1B7D
 			ret
-		
+
 			// Bounce
 		regularBounce:
 			push 0x4B1B34
@@ -360,7 +359,7 @@ namespace Components
 		Utils::Hook(0x417B66, PM_ProjectVelocityStub, HOOK_JUMP).install()->quick();
 
 		// Rocket jump
-		Utils::Hook(0x4A4F9B, Weapon_RocketLauncher_Fire_Hk, HOOK_CALL).install()->quick(); //  FireWeapon        
+		Utils::Hook(0x4A4F9B, Weapon_RocketLauncher_Fire_Hk, HOOK_CALL).install()->quick(); //  FireWeapon
 
 		// Hook StuckInClient & CM_TransformedCapsuleTrace
 		// so we can prevent intersecting players from being pushed away from each other

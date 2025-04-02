@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #ifdef ENABLE_BASE128
 #include "base128.h"
 #endif
@@ -116,13 +115,13 @@ namespace Utils::String
 
 	bool Contains(const std::string& haystack, const std::string& needle)
 	{
-		if (haystack.find(needle) != std::string::npos) 
+		if (haystack.find(needle) != std::string::npos)
 		{
 			return true;
-		} 
-		
+		}
+
 		return false;
-	}		
+	}
 
 	bool IsNumber(const std::string& str)
 	{

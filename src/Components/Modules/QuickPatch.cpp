@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include <Utils/Compression.hpp>
 
 #include "QuickPatch.hpp"
@@ -171,7 +170,7 @@ namespace Components
 	BOOL QuickPatch::IsDynClassname_Stub(const char* classname)
 	{
 		const auto version = Zones::Version();
-		
+
 		if (version >= VERSION_LATEST_CODO)
 		{
 			for (auto i = 0; i < Game::spawnVars->numSpawnVars; i++)
@@ -185,7 +184,7 @@ namespace Components
 
 				if (isSpecOps && isSpecOpsOnly)
 				{
-					// This will prevent spawning of any entity that contains "script_specialops: '1'" 
+					// This will prevent spawning of any entity that contains "script_specialops: '1'"
 					// It removes extra hitboxes / meshes on 461+ CODO multiplayer maps
 					return TRUE;
 				}
@@ -352,8 +351,6 @@ namespace Components
 		// splash logo
 		Utils::Hook::Set<const char*>(0x475F9E, BASEGAME "/images/splash.bmp");
 
-		Utils::Hook::Set<const char*>(0x4876C6, "Successfully read stats data\n");
-
 		// Numerical ping (cg_scoreboardPingText 1)
 		Utils::Hook::Set<BYTE>(0x45888E, 1);
 		Utils::Hook::Set<BYTE>(0x45888C, Game::DVAR_CHEAT);
@@ -388,9 +385,9 @@ namespace Components
 		// disable bind protection
 		Utils::Hook::Set<BYTE>(0x4DACA2, 0xEB);
 
-		// require Windows 5
-		Utils::Hook::Set<BYTE>(0x467ADF, 5);
-		Utils::Hook::Set<char>(0x6DF5D6, '5');
+		// require Windows 6 (Vista)
+		Utils::Hook::Set<BYTE>(0x467ADF, 6);
+		Utils::Hook::Set<char>(0x6DF5D6, '6');
 
 		// disable 'ignoring asset' notices
 		Utils::Hook::Nop(0x5BB902, 5);
@@ -402,7 +399,6 @@ namespace Components
 		Utils::Hook::Set<BYTE>(0x478BA2, 0xEB);
 
 		// fs_game fixes
-		Utils::Hook::Nop(0x4A5D74, 2); // remove fs_game profiles
 		Utils::Hook::Set<BYTE>(0x4081FD, 0xEB); // defaultweapon
 
 		// filesystem init default_mp.cfg check
@@ -649,7 +645,7 @@ namespace Components
 					info.freeFlags = 0x20;
 					Game::DB_LoadXAssets(&info, 1, true);
 				}
-				
+
 				count++;
 			}
 		});
@@ -695,61 +691,5 @@ namespace Components
 		{
 			Utils::Hook::Set<BYTE>(0x60BECF, 0xEB);
 		}
-	}
-
-	bool QuickPatch::unitTest()
-	{
-		uint32_t randIntCount = 4'000'000;
-		Logger::Debug("Generating {} random integers...", randIntCount);
-
-		const auto startTime = std::chrono::high_resolution_clock::now();
-
-		for (uint32_t i = 0; i < randIntCount; ++i)
-		{
-			Utils::Cryptography::Rand::GenerateInt();
-		}
-
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
-		Logger::Debug("took {}ms", duration);
-
-		Logger::Debug("Testing ZLib compression...");
-
-		std::string test = Utils::String::VA("%c", Utils::Cryptography::Rand::GenerateInt());
-
-		for (int i = 0; i < 21; ++i)
-		{
-			std::string compressed = Utils::Compression::ZLib::Compress(test);
-			std::string decompressed = Utils::Compression::ZLib::Decompress(compressed);
-
-			if (test != decompressed)
-			{
-				Logger::PrintError(Game::CON_CHANNEL_ERROR, "Compressing {} bytes and decompressing failed!\n", test.size());
-				return false;
-			}
-
-			const auto size = test.size();
-			for (unsigned int j = 0; j < size; ++j)
-			{
-				test.append(Utils::String::VA("%c", Utils::Cryptography::Rand::GenerateInt()));
-			}
-		}
-
-		Logger::Debug("Success");
-
-		Logger::Debug("Testing trimming...");
-		std::string trim1 = " 1 ";
-		std::string trim2 = "   1";
-		std::string trim3 = "1   ";
-
-		Utils::String::Trim(trim1);
-		Utils::String::LTrim(trim2);
-		Utils::String::RTrim(trim3);
-
-		if (trim1 != "1") return false;
-		if (trim2 != "1") return false;
-		if (trim3 != "1") return false;
-
-		Logger::Debug("Success");
-		return true;
 	}
 }

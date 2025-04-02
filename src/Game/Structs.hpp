@@ -16,6 +16,8 @@
 namespace Game
 {
 #endif
+	constexpr std::size_t MAX_GENTITIES = 2048;
+	constexpr std::size_t ENTITYNUM_NONE = MAX_GENTITIES - 1;
 
 	typedef float vec_t;
 	typedef vec_t vec2_t[2];
@@ -390,7 +392,7 @@ namespace Game
 	{
 		DVAR_NONE = 0,	// No flags
 		DVAR_ARCHIVE = 1 << 0,	// Set to cause it to be saved to config_mp.cfg of the client
-		DVAR_LATCH = 1 << 1,	// Will only change when C code next does a Dvar_Get(), so it can't be changed 
+		DVAR_LATCH = 1 << 1,	// Will only change when C code next does a Dvar_Get(), so it can't be changed
 		// without proper initialization. Modified will be set, even though the value hasn't changed yet
 		DVAR_CHEAT = 1 << 2,	// Can not be changed if cheats are disabled
 		DVAR_CODINFO = 1 << 3,	// On change, this is sent to all clients (if you are host)
@@ -1703,6 +1705,50 @@ namespace Game
 		// IW5 flags backported
 		PWF_DISABLE_WEAPON_PICKUP = 1 << 16
 	};
+
+	enum perksEnum
+	{
+		PERK_JAMRADAR = 0x0,
+		PERK_ACCURACY = 0x1,
+		PERK_FASTRELOAD = 0x2,
+		PERK_RATEOFFIRE = 0x3,
+		PERK_EXTRABREATH = 0x4,
+		PERK_EXTRABP = 0x5,
+		PERK_GRENADEDEATH = 0x6,
+		PERK_PISTOLDEATH = 0x7,
+		PERK_QUIETMOVE = 0x8,
+		PERK_PARABOLIC = 0x9,
+		PERK_LONGERSPRINT = 0xA,
+		PERK_DETECTEXPLOSIVE = 0xB,
+		PERK_EXPOSEENEMY = 0xC,
+		PERK_BULLETDMG = 0xD,
+		PERK_EXTRAAMMO = 0xE,
+		PERK_TWOPRIMARIES = 0xF,
+		PERK_ARMORVEST = 0x10,
+		PERK_FRAGGRENADE = 0x11,
+		PERK_SPECIALGRENADE = 0x12,
+		PERK_FASTMANTLE = 0x13,
+		PERK_JUMPDIVE = 0x14,
+		PERK_EXPLOSIVEBULLETS = 0x15,
+		PERK_SCAVENGER = 0x16,
+		PERK_EXTENDEDMAGS = 0x17,
+		PERK_LIGHTWEIGHT = 0x18,
+		PERK_MARATHON = 0x19,
+		PERK_QUICKDRAW = 0x1A,
+		PERK_COLDBLOODED = 0x1B,
+		PERK_HEARTBREAKER = 0x1C,
+		PERK_SELECTIVEHEARING = 0x1D,
+		PERK_FASTSNIPE = 0x1E,
+		PERK_IMPROVEDEXTRABREATH = 0x1F,
+		PERK_SPYGAME = 0x20,
+		PERK_AUTOMANTLE = 0x21,
+		PERK_FASTSPRINTRECOVERY = 0x22,
+		PERK_EXTENDEDMELEE = 0x23,
+		PERK_COUNT = 0x24,
+		PERK_UNKNOWN = 0x24,
+	};
+
+	constexpr std::size_t PERK_ARRAY_COUNT = 2;
 
 	struct playerState_s
 	{
@@ -6181,7 +6227,7 @@ namespace Game
 		unsigned int hashSize;
 		fileInIwd_s** hashTable;
 		fileInIwd_s* buildBuffer;
-};
+	};
 
 #ifdef IDA
 	typedef void _iobuf;
@@ -7463,6 +7509,129 @@ namespace Game
 		ENT_HANDLER_COUNT
 	};
 
+	struct item_ent_t
+	{
+		int ammoCount;
+		int clipAmmoCount;
+		int index;
+		char dualWieldItem;
+		char padding[3];
+	};
+
+	struct spawner_ent_t
+	{
+		int team;
+		int timestamp;
+		int index;
+	};
+
+	struct trigger_ent_t
+	{
+		int threshold;
+		int accumulate;
+		int timestamp;
+		int singleUserEntIndex;
+		char requireLookAt;
+		char padding[3];
+	};
+
+	struct mover_positions_t
+	{
+		float decelTime;
+		float speed;
+		float midTime;
+		vec3_t pos1;
+		vec3_t pos2;
+		vec3_t pos3;
+	};
+
+	struct mover_slidedata_t
+	{
+		Bounds bounds;
+		vec3_t velocity;
+	};
+
+	union mover_data_t
+	{
+		mover_positions_t pos;
+		mover_slidedata_t slide;
+	};
+
+	struct mover_ent_t
+	{
+		mover_data_t moverData;
+		mover_positions_t angle;
+	};
+
+	struct corpse_ent_t
+	{
+		int deathAnimStartTime;
+	};
+
+	struct missile_fields_grenade
+	{
+		float wobbleCycle;
+		float curve;
+	};
+
+	enum MissileStage
+	{
+		MISSILESTAGE_SOFTLAUNCH = 0x0,
+		MISSILESTAGE_ASCENT = 0x1,
+		MISSILESTAGE_DESCENT = 0x2,
+	};
+
+	struct missile_fields_nonGrenade
+	{
+		vec3_t curvature;
+		vec3_t targetEntOffset;
+		vec3_t targetPos;
+		vec3_t launchOrigin;
+		MissileStage stage;
+	};
+
+	union missile_data_t
+	{
+		missile_fields_grenade grenade;
+		missile_fields_nonGrenade nonGrenade;
+	};
+
+	struct missile_ent_t
+	{
+		int time;
+		int timeOfBirth;
+		int travelDist;
+		vec3_t surfaceNormal;
+		team_t team;
+		int flags;
+		int antilagTimeOffset;
+		missile_data_t missileData;
+	};
+
+	struct blend_ent_t
+	{
+		vec3_t pos;
+		vec3_t vel;
+		vec4_t viewQuat;
+		char changed;
+		char padding[3];
+		float accelTime;
+		float decelTime;
+		float startTime;
+		float totalTime;
+	};
+
+	union entity_data_t
+	{
+		item_ent_t item[2];
+		spawner_ent_t spawner;
+		trigger_ent_t trigger;
+		mover_ent_t mover;
+		corpse_ent_t corpse;
+		missile_ent_t missile;
+		blend_ent_t blend;
+	};
+
 	struct gentity_s
 	{
 		entityState_s s;
@@ -7496,15 +7665,16 @@ namespace Game
 		int maxHealth;
 		int damage;
 		int count;
+		entity_data_t entData;
 		EntHandle missileTargetEnt;
 		EntHandle remoteControlledOwner;
+		int tagInfo;
 		gentity_s* tagChildren;
 		unsigned __int16 attachModelNames[19];
 		unsigned __int16 attachTagNames[19];
 		int useCount;
 		gentity_s* nextFree;
 		int birthTime;
-		char pad[100];
 	};
 
 	static_assert(sizeof(gentity_s) == 0x274);
@@ -9532,7 +9702,7 @@ namespace Game
 		float lockOnRegionHeight;
 	};
 
-	constexpr auto AIM_TARGET_INVALID = 0x3FF;
+	constexpr auto AIM_TARGET_INVALID = MAX_GENTITIES - 1;
 	struct AimScreenTarget
 	{
 		int entIndex;
@@ -11760,6 +11930,145 @@ namespace Game
 		MssStreamReadInfo streamReadInfo[12];
 	};
 
+	struct cgMedia_t
+	{
+		Material* whiteMaterial;
+		Material* teamStatusBar;
+		Material* splatterMaterial;
+		Material* balloonMaterial;
+		Material* youInKillCamMaterial;
+		TracerDef* tracerDefault;
+		Material* tracerThermalOverrideMat;
+		Material* laserMaterial;
+		Material* laserLightMaterial;
+		Material* lagometerMaterial;
+		Material* hintMaterials[1405];
+		Material* stanceMaterials[4];
+		Material* objectiveMaterials[1];
+		Material* friendMaterials[2];
+		Material* friendPartyMaterials[2];
+		Material* damageMaterial;
+		Material* damageMaterialStun;
+		Material* mantleHint;
+		Font_s* smallDevFont;
+		Font_s* bigDevFont;
+		snd_alias_list_t* landDmgSound;
+		snd_alias_list_t* grenadeExplodeSound[31];
+		snd_alias_list_t* rocketExplodeSound[31];
+		snd_alias_list_t* bulletExplodeSound[31];
+		snd_alias_list_t* trophyExplodeSound;
+		snd_alias_list_t* bulletHitSmallSound[31];
+		snd_alias_list_t* bulletHitLargeSound[31];
+		snd_alias_list_t* bulletHitAPSound[31];
+		snd_alias_list_t* shotgunHitSound[31];
+		snd_alias_list_t* bulletExitSmallSound[31];
+		snd_alias_list_t* bulletExitLargeSound[31];
+		snd_alias_list_t* bulletExitAPSound[31];
+		snd_alias_list_t* shotgunExitSound[31];
+		snd_alias_list_t* stepSprintSound[62];
+		snd_alias_list_t* stepSprintSoundPlayer[62];
+		snd_alias_list_t* stepRunSound[62];
+		snd_alias_list_t* stepRunSoundPlayer[62];
+		snd_alias_list_t* stepWalkSound[62];
+		snd_alias_list_t* stepWalkSoundPlayer[62];
+		snd_alias_list_t* stepProneSound[62];
+		snd_alias_list_t* stepProneSoundPlayer[62];
+		snd_alias_list_t* landSound[62];
+		snd_alias_list_t* landSoundPlayer[62];
+		snd_alias_list_t* qsprintingEquipmentSound;
+		snd_alias_list_t* qsprintingEquipmentSoundPlayer;
+		snd_alias_list_t* qrunningEquipmentSound;
+		snd_alias_list_t* qrunningEquipmentSoundPlayer;
+		snd_alias_list_t* qwalkingEquipmentSound;
+		snd_alias_list_t* qwalkingEquipmentSoundPlayer;
+		snd_alias_list_t* sprintingEquipmentSound;
+		snd_alias_list_t* sprintingEquipmentSoundPlayer;
+		snd_alias_list_t* runningEquipmentSound;
+		snd_alias_list_t* runningEquipmentSoundPlayer;
+		snd_alias_list_t* walkingEquipmentSound;
+		snd_alias_list_t* walkingEquipmentSoundPlayer;
+		snd_alias_list_t* foliageMovement;
+		snd_alias_list_t* bulletWhizby;
+		snd_alias_list_t* meleeHit;
+		snd_alias_list_t* meleeHitOther;
+		snd_alias_list_t* meleeKnifeHit;
+		snd_alias_list_t* meleeKnifeHitOther;
+		snd_alias_list_t* meleeKnifeHitShield;
+		snd_alias_list_t* nightVisionOn;
+		snd_alias_list_t* nightVisionOff;
+		snd_alias_list_t* playerHeartBeatSound;
+		snd_alias_list_t* playerBreathInSound;
+		snd_alias_list_t* playerBreathOutSound;
+		snd_alias_list_t* playerBreathGaspSound;
+		snd_alias_list_t* playerSwapOffhand;
+		snd_alias_list_t* physCollisionSound[100][31];
+		snd_alias_list_t* glassDamaged;
+		snd_alias_list_t* glassDestroyed;
+		snd_alias_list_t* glassDestroyedQuiet;
+		Material* compassping_friendlyfiring;
+		Material* compassping_friendlyyelling;
+		Material* compassping_friendlyfiring_party;
+		Material* compassping_friendlyyelling_party;
+		Material* compassping_enemy;
+		Material* compassping_enemyfiring;
+		Material* compassping_enemyyelling;
+		Material* compassping_grenade;
+		Material* compassping_explosion;
+		Material* compass_radarline;
+		Material* compassping_sentry_friendly;
+		Material* compassping_sentry_friendlyfiring;
+		Material* compassping_sentry_enemy;
+		Material* compassping_sentry_enemyfiring;
+		Material* grenadeIconFrag;
+		Material* grenadeIconFlash;
+		Material* grenadeIconThrowBack;
+		Material* grenadePointer;
+		Material* offscreenObjectivePointer;
+		FxImpactTable* fx;
+		FxEffectDef* fxNoBloodFleshHit;
+		FxEffectDef* fxKnifeBlood;
+		FxEffectDef* fxKnifeNoBlood;
+		FxEffectDef* fxTrophyExplode;
+		FxEffectDef* fxTrophyFlash;
+		FxEffectDef* fxRiotShieldImpact;
+		FxEffectDef* fxBloodOnRiotshield;
+		FxEffectDef* heliDustEffect;
+		FxEffectDef* heliWaterEffect;
+		FxEffectDef* helicopterLightSmoke;
+		FxEffectDef* helicopterHeavySmoke;
+		FxEffectDef* helicopterOnFire;
+		FxEffectDef* glassPieceBreak;
+		FxEffectDef* glassShatter;
+		FxEffectDef* glassShatterSmall;
+		Material* nightVisionOverlay;
+		Material* hudIconNVG;
+		Material* hudDpadArrow;
+		Material* ammoCounterBullet;
+		Material* ammoCounterBeltBullet;
+		Material* ammoCounterRifleBullet;
+		Material* ammoCounterRocket;
+		Material* ammoCounterShotgunShell;
+		Material* mapLocationSelectorArrow;
+		Material* FOFTargetBox_Hostile;
+		Material* FOFTargetBox_HostileVehicle;
+		Material* FOFTargetBox_Self;
+		Material* remoteMissileTargetFriendly;
+		Material* remoteMissileTargetHostile;
+		FxEffectDef* fxs[256];
+	};
+
+	struct WinVars_t
+	{
+		HINSTANCE__* reflib_library;
+		int reflib_active;
+		HWND__* hWnd;
+		HINSTANCE__* hInstance;
+		int activeApp;
+		int isMinimized;
+		int recenterMouse;
+		HHOOK__* lowLevelKeyboardHook;
+		unsigned int sysMsgTime;
+	};
 
 #pragma endregion
 

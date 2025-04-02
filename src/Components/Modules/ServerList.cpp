@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include <Utils/InfoString.hpp>
 #include <Utils/WebIO.hpp>
 
@@ -979,7 +978,7 @@ namespace Components
 				Logger::Print("Parsed {} servers from master\n", RefreshContainer.servers.size() - count);
 			});
 
-		// Set default masterServerName + port and save it 
+		// Set default masterServerName + port and save it
 		Utils::Hook::Set<const char*>(0x60AD92, "server.alterware.dev");
 		Utils::Hook::Set<std::uint8_t>(0x60AD90, Game::DVAR_NONE); // masterServerName
 		Utils::Hook::Set<std::uint8_t>(0x60ADC6, Game::DVAR_NONE); // masterPort

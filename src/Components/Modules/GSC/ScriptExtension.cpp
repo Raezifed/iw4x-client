@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 
 #include <Components/Modules/Events.hpp>
 
@@ -175,7 +174,7 @@ namespace Components::GSC
 
 				Logger::Print(Game::level->scriptPrintChannel, "{}", str);
 			}
-		});		
+		});
 	}
 
 	ScriptExtension::ScriptExtension()

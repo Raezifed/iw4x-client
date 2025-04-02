@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include <proto/rcon.pb.h>
 
 #include "Events.hpp"
@@ -38,7 +37,7 @@ namespace Components
 				Password.clear();
 				return;
 			}
-				
+
 			auto* addr = reinterpret_cast<Game::netadr_t*>(0xA5EA44);
 			if (Password.empty())
 			{

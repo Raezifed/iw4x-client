@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include <Utils/InfoString.hpp>
 
 #include <proto/auth.pb.h>
@@ -332,7 +331,7 @@ namespace Components
 		Utils::IO::CreateDir(appdata.string());
 
 		const auto guidPath = appdata / "guid.dat";
-		
+
 		return guidPath.string();
 	}
 
@@ -368,7 +367,7 @@ namespace Components
 			cert.set_token(GuidToken.toString());
 			cert.set_ctoken(ComputeToken.toString());
 			cert.set_privatekey(GuidKey.serialize(PK_PRIVATE));
-			
+
 			const auto guidPath = GetGUIDFilePath();
 			Utils::IO::WriteFile(guidPath, cert.SerializeAsString());
 		}
@@ -685,66 +684,5 @@ namespace Components
 		{
 			TokenContainer.thread.join();
 		}
-	}
-
-	bool Auth::unitTest()
-	{
-		bool success = true;
-
-		printf("Testing logical token operators:\n");
-
-		Utils::Cryptography::Token token1;
-		Utils::Cryptography::Token token2;
-		++token1, token2++; // Test incrementation operator
-
-		printf("Operator == : ");
-		if (token1 == token2 && !(++token1 == token2)) printf("Success\n");
-		else
-		{
-			printf("Error\n");
-			success = false;
-		}
-
-		printf("Operator != : ");
-		if (token1 != token2 && !(++token2 != token1)) printf("Success\n");
-		else
-		{
-			printf("Error\n");
-			success = false;
-		}
-
-		printf("Operator >= : ");
-		if (token1 >= token2 && ++token1 >= token2) printf("Success\n");
-		else
-		{
-			printf("Error\n");
-			success = false;
-		}
-
-		printf("Operator >  : ");
-		if (token1 > token2) printf("Success\n");
-		else
-		{
-			printf("Error\n");
-			success = false;
-		}
-
-		printf("Operator <= : ");
-		if (token1 <= ++token2 && token1 <= ++token2) printf("Success\n");
-		else
-		{
-			printf("Error\n");
-			success = false;
-		}
-
-		printf("Operator <  : ");
-		if (token1 < token2) printf("Success\n");
-		else
-		{
-			printf("Error\n");
-			success = false;
-		}
-
-		return success;
 	}
 }

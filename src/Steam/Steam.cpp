@@ -1,4 +1,3 @@
-#include <STDInclude.hpp>
 #include "Components/Modules/StartupMessages.hpp"
 
 namespace Steam
@@ -126,7 +125,6 @@ namespace Steam
 #ifdef _DEBUG
 				OutputDebugStringA("Steam proxy not initialized properly");
 #endif
-				Components::StartupMessages::AddMessage("Warning:\nUnable to connect to Steam. Steam features will be unavailable");
 			}
 			else
 			{
