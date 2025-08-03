@@ -3,6 +3,12 @@
 // Unsorted function definitions
 namespace Game
 {
+	typedef void(__cdecl* __security_init_cookie_t)(void);
+	extern __security_init_cookie_t __security_init_cookie;
+
+	typedef int(* __tmainCRTStartup_t)(void);
+	extern __tmainCRTStartup_t __tmainCRTStartup;
+
 	typedef void(*AngleVectors_t)(float* angles, float* forward, float* right, float* up);
 	extern AngleVectors_t AngleVectors;
 
@@ -532,12 +538,6 @@ namespace Game
 
 	typedef void(*IN_MouseMove_t)();
 	extern IN_MouseMove_t IN_MouseMove;
-
-	typedef void(*IN_MouseEvent_t)(int flags);
-	extern IN_MouseEvent_t IN_MouseEvent;
-
-	typedef void(*IN_Frame_t)();
-	extern IN_Frame_t IN_Frame;
 
 	typedef void(*IN_Init_t)();
 	extern IN_Init_t IN_Init;

@@ -1,7 +1,11 @@
+#include "Functions.hpp"
 
 // Unsorted function definitions
 namespace Game
 {
+	__security_init_cookie_t __security_init_cookie = __security_init_cookie_t(0x06CA062);
+	__tmainCRTStartup_t __tmainCRTStartup = __tmainCRTStartup_t(0x06BAA2F);
+
 	AngleVectors_t AngleVectors = AngleVectors_t(0x4691A0);
 
 	Cbuf_AddServerText_f_t Cbuf_AddServerText_f = Cbuf_AddServerText_f_t(0x4BB9B0);
@@ -155,6 +159,8 @@ namespace Game
 	R_FlushSun_t R_FlushSun = R_FlushSun_t(0x53FB50);
 	R_SortWorldSurfaces_t R_SortWorldSurfaces = R_SortWorldSurfaces_t(0x53DC10);
 
+	RMesg_SendMessages_t RMesg_SendMessages = RMesg_SendMessages_t(0x49CC30);
+
 	GetMemory_t GetMemory = GetMemory_t(0x4E67B0);
 	GetClearedMemory_t GetClearedMemory = GetClearedMemory_t(0x422E70);
 	PS_CreatePunctuationTable_t PS_CreatePunctuationTable = PS_CreatePunctuationTable_t(0x4E6950);
@@ -225,8 +231,6 @@ namespace Game
 	IN_RecenterMouse_t IN_RecenterMouse = IN_RecenterMouse_t(0x463D80);
 
 	IN_MouseMove_t IN_MouseMove = IN_MouseMove_t(0x64C490);
-	IN_MouseEvent_t IN_MouseEvent = IN_MouseEvent_t(0x4C84D0);
-	IN_Frame_t IN_Frame = IN_Frame_t(0x475E10);
 	IN_Init_t IN_Init = IN_Init_t(0x45D620);
 	IN_Shutdown_t IN_Shutdown = IN_Shutdown_t(0x426360);
 

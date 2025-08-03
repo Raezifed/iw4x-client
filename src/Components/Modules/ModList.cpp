@@ -1,6 +1,5 @@
-
-#include "Events.hpp"
 #include "ModList.hpp"
+#include "Events.hpp"
 #include "UIFeeder.hpp"
 
 namespace Components
@@ -186,6 +185,11 @@ namespace Components
 			{
 				// That means we exited from the main menu - we don't need to clear mods
 				// If the server we joined has mods, the Download handler will set them
+				return;
+			}
+
+			if (Components::Flags::HasFlag("disable-mod-unloading"))
+			{
 				return;
 			}
 

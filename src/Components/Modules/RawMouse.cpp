@@ -1,47 +1,21 @@
-#include "Gamepad.hpp"
 #include "RawMouse.hpp"
+#include "Gamepad.hpp"
 #include "Window.hpp"
+#include "Logger.hpp"
 
 namespace Components
 {
-	void rawMouseValue_t::ResetDelta()
-	{
-		this->previous = this->current;
-	}
-
-	int rawMouseValue_t::GetDelta() const
-	{
-		return this->current - this->previous;
-	}
-
-	void rawMouseValue_t::Update(int value, bool absolute)
-	{
-		if (absolute) // if mouse is absolute, reset current value
-			this->current = 0;
-
-		this->current += value;
-	}
-
 	Dvar::Var RawMouse::M_RawInput;
-	Dvar::Var RawMouse::M_RawInputVerbose;
-	Dvar::Var RawMouse::R_AutoPriority = nullptr;
-	Dvar::Var RawMouse::R_FullScreen = nullptr;
+	int RawMouse::MouseRawX = 0;
+	int RawMouse::MouseRawY = 0;
 
-	rawMouseValue_t RawMouse::MouseRawX{ 0,0 };
-	rawMouseValue_t RawMouse::MouseRawY{ 0,0 };
-	uint32_t RawMouse::MouseRawEvents = 0;
-
-	bool RawMouse::InRawInput = false;
-	bool RawMouse::FirstRawInputUpdate = true;
-
-	constexpr const int K_MWHEELUP = 205;
-	constexpr const int K_MWHEELDOWN = 206;
-
-	void ClampMousePos(POINT& curPos)
+	void RawMouse::IN_ClampMouseMove()
 	{
 		tagRECT rc;
-		if (GetWindowRect(Window::GetWindow(), &rc) != TRUE)
-			return;
+		tagPOINT curPos;
+
+		GetCursorPos(&curPos);
+		GetWindowRect(Window::GetWindow(), &rc);
 		auto isClamped = false;
 		if (curPos.x >= rc.left)
 		{
@@ -56,7 +30,6 @@ namespace Components
 			curPos.x = rc.left;
 			isClamped = true;
 		}
-
 		if (curPos.y >= rc.top)
 		{
 			if (curPos.y >= rc.bottom)
@@ -77,450 +50,152 @@ namespace Components
 		}
 	}
 
-	void RawMouse::IN_ClampMouseMove()
+	LRESULT RawMouse::OnRawInput(LPARAM lParam, WPARAM)
 	{
-		tagPOINT curPos;
-		GetCursorPos(&curPos);
-		ClampMousePos(curPos);
-	}
-
-	bool CheckButtonFlag(DWORD usButtonFlags, DWORD flag)
-	{
-		return (usButtonFlags & flag) != 0u;
-	}
-
-	void RawMouse::ResetMouseRawEvents()
-	{
-		// this code messes up sometimes and forces attack in alt-tabbing.
-		//if (MouseRawEvents != 0)
-		//{
-		//	// send release event for all buttons.
-		//	Game::IN_MouseEvent(MouseRawEvents);
+		// The LPARAM contains a handle to a RAWINPUT structure, which we access in
+		// two stages:
 		//
-		//	if (M_RawInputVerbose.get<bool>())
-		//		Logger::Debug("Force-Releasing buttons {}", MouseRawEvents);
-		//}
-		MouseRawEvents = 0u;
-		FirstRawInputUpdate = true;
-	}
+		//   1. First, we query the size of the input data via GetRawInputData()
+		//      with a null buffer. This allows us to allocate an appropriately
+		//      sized buffer for the actual data payload.
+		//
+		//   2. Then, we call GetRawInputData() again to retrieve the full RAWINPUT
+		//      structure into that buffer.
+		//
+		// This two-step process is necessary because the size of the input data may
+		// vary depending on device type and driver configuration, and cannot be
+		// safely predicted in advance. This behavior is documented in the WinAPI,
+		// and we have also encountered it in practice; see:
+		//
+		//   https://github.com/iw4x/iw4x-client/pull/297
+		//
+		// There, failing to query the size beforehand led to buffer overruns or
+		// data truncation on certain hardware configurations.
 
-	void RawMouse::ProcessMouseRawEvent(DWORD usButtonFlags, DWORD flagDown, DWORD mouseEvent)
-	{
-		const uint32_t prevMouseEvents = MouseRawEvents;
+		UINT dwSize = 0;
 
-		if (CheckButtonFlag(usButtonFlags, flagDown))
+		if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, nullptr, &dwSize, sizeof(RAWINPUTHEADER)) == (UINT)-1)
 		{
-			if (M_RawInputVerbose.get<bool>())
+			Logger::Warning(Game::CON_CHANNEL_SYSTEM, "WinAPI: GetRawInputData failed: {}\n", GetLastError());
+			return 0;
+		}
+
+		// Note that a zero-size payload is technically valid (though unexpected)
+		// and implies there is no data to process.
+		//
+		if (dwSize == 0)
+			return 0;
+
+		std::vector<BYTE> buffer(dwSize);
+
+		if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, buffer.data(), &dwSize, sizeof(RAWINPUTHEADER)) == (UINT)-1)
+		{
+			Logger::Warning(Game::CON_CHANNEL_SYSTEM, "WinAPI: GetRawInputData failed: {}\n", GetLastError());
+			return 0;
+		}
+
+		RAWINPUT* raw = reinterpret_cast<RAWINPUT *>(buffer.data());
+
+		if (raw->header.dwType == RIM_TYPEMOUSE)
+		{
+			const auto& mouse = raw->data.mouse;
+
+			if (mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
 			{
-				if ((prevMouseEvents & mouseEvent) != 0u)
-					Logger::Debug("!! Pressing button that wasn't released");
-
-				Logger::Debug("Mouse button down: [{}, {}]", mouseEvent, prevMouseEvents);
+				MouseRawX = mouse.lLastX;
+				MouseRawY = mouse.lLastY;
 			}
-
-			MouseRawEvents |= mouseEvent;
-		}
-
-		if (CheckButtonFlag(usButtonFlags, flagDown << 1u))
-		{
-			// Sometimes when alt-tabbing LMB release somehow gets passed there,
-			// releasing button that was not even pressed...
-			if ((prevMouseEvents & mouseEvent) == 0u)
+			else
 			{
-				if (M_RawInputVerbose.get<bool>())
-					Logger::Debug("!! Releasing button that wasn't pressed");
-
-				return;
+				MouseRawX += mouse.lLastX;
+				MouseRawY += mouse.lLastY;
 			}
-
-			if (M_RawInputVerbose.get<bool>())
-				Logger::Debug("Mouse button up: [{}, {}]", mouseEvent, prevMouseEvents);
-
-			MouseRawEvents &= ~mouseEvent;
-		}
-	}
-
-	bool RawMouse::GetRawInput(LPARAM lParam, RAWINPUT& raw, UINT& dwSize)
-	{
-		const UINT result = GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &dwSize, sizeof(RAWINPUTHEADER));
-
-		if (result == static_cast<UINT>(-1) || raw.header.dwType != RIM_TYPEMOUSE)
-			return false;
-
-		return true;
-	}
-
-	BOOL RawMouse::OnRawInput(LPARAM lParam, WPARAM)
-	{
-		if (!InRawInput) {
-			ResetMouseRawEvents();
-			return TRUE;
 		}
 
-		UINT dwSize = sizeof(RAWINPUT);
-		static RAWINPUT raw;
-
-		if (!GetRawInput(lParam, raw, dwSize))
-			return TRUE;
-
-		if (GetForegroundWindow() != Window::GetWindow())
-			return TRUE;
-
-		// Is there's really absolute mouse on earth?
-		const bool bAbsMouseMove = (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0u;
-
-		MouseRawX.Update(raw.data.mouse.lLastX, bAbsMouseMove);
-		MouseRawY.Update(raw.data.mouse.lLastY, bAbsMouseMove);
-
-		// fix of angle snap when alt tabbing.
-		if (FirstRawInputUpdate)
-		{
-			MouseRawX.ResetDelta();
-			MouseRawY.ResetDelta();
-			FirstRawInputUpdate = false;
-		}
-
-		// Process mouse buttons events
-		// format: (current_rawinput_flags, rawinput_mouse_button_keycode, cod_mouse_event).
-		// The function checks both down & up states.
-		ProcessMouseRawEvent(raw.data.mouse.usButtonFlags, RI_MOUSE_BUTTON_1_DOWN, 1);
-		ProcessMouseRawEvent(raw.data.mouse.usButtonFlags, RI_MOUSE_BUTTON_2_DOWN, 2);
-		ProcessMouseRawEvent(raw.data.mouse.usButtonFlags, RI_MOUSE_BUTTON_3_DOWN, 4);
-		ProcessMouseRawEvent(raw.data.mouse.usButtonFlags, RI_MOUSE_BUTTON_4_DOWN, 8);
-		ProcessMouseRawEvent(raw.data.mouse.usButtonFlags, RI_MOUSE_BUTTON_5_DOWN, 16);
-
-		Game::IN_MouseEvent(MouseRawEvents);
-
-		if (raw.data.mouse.usButtonFlags & RI_MOUSE_WHEEL)
-		{
-			const SHORT scroll_delta = static_cast<SHORT>(raw.data.mouse.usButtonData);
-
-			if (scroll_delta > 0)
-				Game::Sys_QueEvents(Game::g_wv->sysMsgTime, 1, K_MWHEELDOWN, 0, 0);
-			if (scroll_delta < 0)
-				Game::Sys_QueEvents(Game::g_wv->sysMsgTime, 1, K_MWHEELUP, 0, 0);
-		}
-
-		return TRUE;
-	}
-
-	bool RawMouse::IsMouseInClientBounds()
-	{
-		POINT curPos;
-		GetCursorPos(&curPos);
-		ScreenToClient(Window::GetWindow(), &curPos);
-
-		RECT rect;
-		Window::Dimension(Window::GetWindow(), &rect);
-
-		return (curPos.y >= 0 && curPos.x >= 0 && (rect.right - rect.left) >= curPos.x && (rect.bottom - rect.top) >= curPos.y);
-	}
-
-	BOOL RawMouse::OnLegacyMouseEvent(UINT Msg, LPARAM lParam, WPARAM wParam)
-	{
-		int MouseEvents = (wParam & MK_LBUTTON) != 0;
-		if ((wParam & MK_RBUTTON) != 0)
-			MouseEvents |= 2u;
-		if ((wParam & MK_MBUTTON) != 0)
-			MouseEvents |= 4u;
-		if ((wParam & MK_XBUTTON1) != 0)
-			MouseEvents |= 8u;
-		if ((wParam & MK_XBUTTON2) != 0)
-			MouseEvents |= 0x10u;
-
-		if (M_RawInput.get<bool>())
-		{
-			if (MouseEvents == 0)
-				return TRUE;
-
-			if (M_RawInputVerbose.get<bool>())
-				Logger::Debug("Window Mouse Message: [{}, {}]", MouseEvents, MouseRawEvents);
-
-			MouseRawEvents = MouseEvents;
-			return TRUE;
-		}
-
-		Game::IN_MouseEvent(MouseEvents);
-
-		// we should call DefWindowProcA there as game, thats why there is 8 1line functions...
-		return DefWindowProcA(Window::GetWindow(), Msg, wParam, lParam);
-	}
-
-	BOOL RawMouse::OnKillFocus([[maybe_unused]] LPARAM lParam, WPARAM)
-	{
-		ToggleRawInput(false);
-		if (R_AutoPriority.get<Game::dvar_t*>() && R_AutoPriority.get<bool>())
-			SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
-		SetFocus(nullptr);
-		ResetMouseRawEvents();
-		return FALSE;
-	}
-
-	BOOL RawMouse::OnSetFocus([[maybe_unused]] LPARAM lParam, WPARAM)
-	{
-		ToggleRawInput(IsMouseInClientBounds());
-		if (R_AutoPriority.get<Game::dvar_t*>() && R_AutoPriority.get<bool>())
-			SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
-
-		SetFocus(Window::GetWindow());
-		return FALSE;
+		return 0;
 	}
 
 	void RawMouse::IN_RawMouseMove()
 	{
-		if (GetForegroundWindow() != Window::GetWindow())
-			return;
+		static auto r_fullscreen = Dvar::Var("r_fullscreen");
 
-		auto dx = MouseRawX.GetDelta();
-		auto dy = MouseRawY.GetDelta();
-
-		MouseRawX.ResetDelta();
-		MouseRawY.ResetDelta();
-
-		// Don't use raw input for menu?
-		// Because it needs to call the ScreenToClient
-		tagPOINT curPos;
-		GetCursorPos(&curPos);
-		Game::s_wmv->oldPos = curPos;
-		ScreenToClient(Window::GetWindow(), &curPos);
-
-		Gamepad::OnMouseMove(curPos.x, curPos.y, dx, dy);
-
-		auto recenterMouse = Game::CL_MouseEvent(curPos.x, curPos.y, dx, dy);
-
-		ClipCursor(NULL);
-
-		if (recenterMouse)
+		if (GetForegroundWindow() == Window::GetWindow())
 		{
-			RawMouse::IN_RecenterMouse();
-		}
-	}
-
-	bool RawMouse::ToggleRawInput(bool enable)
-	{
-		if (!M_RawInput.get<bool>())
-		{
-			if (!InRawInput)
-				return false;
-
-			enable = false;
-		}
-		else
-		{
-			if (InRawInput == enable)
-				return InRawInput;
-		}
-
-		constexpr DWORD rawMouseFlags = RIDEV_INPUTSINK | RIDEV_NOLEGACY;
-
-		RAWINPUTDEVICE Rid[1];
-		Rid[0].usUsagePage = HID_USAGE_PAGE_GENERIC;
-		Rid[0].usUsage = HID_USAGE_GENERIC_MOUSE;
-		Rid[0].dwFlags = (enable ? rawMouseFlags : RIDEV_REMOVE);
-		Rid[0].hwndTarget = enable ? Window::GetWindow() : NULL;
-
-		bool success = RegisterRawInputDevices(Rid, ARRAYSIZE(Rid), sizeof(Rid[0])) == TRUE;
-
-		if (!success)
-			Logger::Warning(Game::CON_CHANNEL_SYSTEM, "RawInputDevices: failed: {}\n", GetLastError());
-		else
-		{
-			InRawInput = (Rid[0].dwFlags & RIDEV_REMOVE) == 0u;
-
-			if (M_RawInputVerbose.get<bool>())
+			if (r_fullscreen.get<bool>())
 			{
-				if (InRawInput)
-					Logger::Debug("Raw Input enabled");
-				else
-					Logger::Debug("Raw Input disabled");
+				IN_ClampMouseMove();
 			}
 
-			if (!InRawInput)
-				ResetMouseRawEvents();
-		}
+			static auto oldX = 0, oldY = 0;
 
-		return true;
+			auto dx = MouseRawX - oldX;
+			auto dy = MouseRawY - oldY;
+
+			oldX = MouseRawX;
+			oldY = MouseRawY;
+
+			// Don't use raw input for menu?
+			// Because it needs to call the ScreenToClient
+			tagPOINT curPos;
+			GetCursorPos(&curPos);
+			Game::s_wmv->oldPos = curPos;
+			ScreenToClient(Window::GetWindow(), &curPos);
+
+			Gamepad::OnMouseMove(curPos.x, curPos.y, dx, dy);
+			auto recenterMouse = Game::CL_MouseEvent(curPos.x, curPos.y, dx, dy);
+
+			if (recenterMouse)
+			{
+				Game::IN_RecenterMouse();
+			}
+		}
 	}
 
 	void RawMouse::IN_RawMouse_Init()
 	{
-		if (Window::GetWindow() && ToggleRawInput(true)) {
+		if (Window::GetWindow() && M_RawInput.get<bool>() && !Gamepad::IsGamePadInUse())
+		{
 			Logger::Debug("Raw Mouse Init");
-		}
 
+			RAWINPUTDEVICE Rid[1];
+			Rid[0].usUsagePage = 0x01; // HID_USAGE_PAGE_GENERIC
+			Rid[0].usUsage = 0x02; // HID_USAGE_GENERIC_MOUSE
+			Rid[0].dwFlags = RIDEV_INPUTSINK;
+			Rid[0].hwndTarget = Window::GetWindow();
+
+			RegisterRawInputDevices(Rid, ARRAYSIZE(Rid), sizeof(Rid[0]));
+		}
 	}
 
 	void RawMouse::IN_Init()
 	{
 		Game::IN_Init();
 		IN_RawMouse_Init();
-		ResetMouseRawEvents();
-
-		R_AutoPriority = Dvar::Var("r_autopriority");
-		R_FullScreen = Dvar::Var(0x069F0DA0);
-
-	#if true
-		// https://github.com/iw4x/iw4x-client/issues/177
-		M_RawInput.set(false);
-	#endif
-
-	}
-
-	void RawMouse::IN_Frame()
-	{
-		bool focused = GetForegroundWindow() == Window::GetWindow();
-		if (focused)
-			focused = IsMouseInClientBounds();
-		ToggleRawInput(focused);
-		return Game::IN_Frame();
-	}
-
-	BOOL RawMouse::IN_RecenterMouse()
-	{
-		RECT clientRect{ };
-		HWND window = Window::GetWindow();
-
-		GetClientRect(window, &clientRect);
-
-		ClientToScreen(window, std::bit_cast<POINT*>(&clientRect.left));
-		ClientToScreen(window, std::bit_cast<POINT*>(&clientRect.right));
-
-		return ClipCursor(&clientRect);
 	}
 
 	void RawMouse::IN_MouseMove()
 	{
-		if (InRawInput)
+		if (M_RawInput.get<bool>() && !Gamepad::IsGamePadInUse())
 		{
-			return IN_RawMouseMove();
+			IN_RawMouseMove();
 		}
-
-		// IN_MouseMove
-		if (GetForegroundWindow() != Window::GetWindow())
-			return;
-
-		tagPOINT cursorPos;
-		static tagPOINT prevCursorPos;
-
-		GetCursorPos(&cursorPos);
-		if (R_FullScreen.get<Game::dvar_t*>() && R_FullScreen.get<bool>())
-			ClampMousePos(cursorPos);
-
-		int deltaX = cursorPos.x - prevCursorPos.x;
-		int deltaY = cursorPos.y - prevCursorPos.y;
-		prevCursorPos = cursorPos;
-
-		ScreenToClient(Window::GetWindow(), &cursorPos);
-		auto recenterMouse = Game::CL_MouseEvent(cursorPos.x, cursorPos.y, deltaX, deltaY);
-
-		if (recenterMouse && (deltaX || deltaY))
+		else
 		{
-			RECT Rect;
-			if (GetWindowRect(Window::GetWindow(), &Rect) == TRUE)
-			{
-				int WindowCenterX = (Rect.right + Rect.left) / 2;
-				int WindowCenterY = (Rect.top + Rect.bottom) / 2;
-				SetCursorPos(WindowCenterX, WindowCenterY);
-
-				prevCursorPos.x = WindowCenterX;
-				prevCursorPos.y = WindowCenterY;
-			}
+			Game::IN_MouseMove();
 		}
-	}
-
-	BOOL RawMouse::OnMouseFirst(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_MOUSEFIRST, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnLBDown(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_LBUTTONDOWN, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnLBUp(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_LBUTTONUP, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnRBDown(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_RBUTTONDOWN, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnRBUp(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_RBUTTONUP, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnMBDown(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_MBUTTONDOWN, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnMBUp(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_MBUTTONUP, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnXBDown(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_XBUTTONDOWN, lParam, wParam);
-	}
-
-	BOOL RawMouse::OnXBUp(LPARAM lParam, WPARAM wParam)
-	{
-		return OnLegacyMouseEvent(WM_XBUTTONUP, lParam, wParam);
 	}
 
 	RawMouse::RawMouse()
 	{
 		Utils::Hook(0x475E65, IN_MouseMove, HOOK_JUMP).install()->quick();
 		Utils::Hook(0x475E8D, IN_MouseMove, HOOK_JUMP).install()->quick();
-		//Utils::Hook(0x475E9E, IN_MouseMove, HOOK_JUMP).install()->quick(); // Used in controller
 
 		Utils::Hook(0x467C03, IN_Init, HOOK_CALL).install()->quick();
 		Utils::Hook(0x64D095, IN_Init, HOOK_JUMP).install()->quick();
 
-		Utils::Hook(0x60BFB9, IN_Frame, HOOK_CALL).install()->quick();
-		Utils::Hook(0x4A87E2, IN_Frame, HOOK_CALL).install()->quick();
-		Utils::Hook(0x48A0E6, IN_Frame, HOOK_CALL).install()->quick();
-
-		Utils::Hook(0x473517, IN_RecenterMouse, HOOK_CALL).install()->quick();
-		Utils::Hook(0x64C520, IN_RecenterMouse, HOOK_CALL).install()->quick();
-
 		M_RawInput = Dvar::Register<bool>("m_rawinput", true, Game::DVAR_ARCHIVE, "Use raw mouse input, Improves accuracy & has better support for higher polling rates");
-		M_RawInputVerbose = Dvar::Register<bool>("m_rawinput_verbose", false, Game::DVAR_ARCHIVE | Game::DVAR_SAVED, "Raw mouse input debug log");
-
-		Window::OnWndMessage(WM_KILLFOCUS, OnKillFocus);
-		Window::OnWndMessage(WM_SETFOCUS, OnSetFocus);
-
-		// not the cleanest way but we got Msg in arguments now...
-		Window::OnWndMessage(WM_MOUSEFIRST, OnMouseFirst);
-		Window::OnWndMessage(WM_LBUTTONDOWN, OnLBDown);
-		Window::OnWndMessage(WM_LBUTTONUP, OnLBUp);
-		Window::OnWndMessage(WM_RBUTTONDOWN, OnRBDown);
-		Window::OnWndMessage(WM_RBUTTONUP, OnRBUp);
-		Window::OnWndMessage(WM_MBUTTONDOWN, OnMBDown);
-		Window::OnWndMessage(WM_MBUTTONUP, OnMBUp);
-		Window::OnWndMessage(WM_XBUTTONDOWN, OnXBDown);
-		Window::OnWndMessage(WM_XBUTTONUP, OnXBUp);
 
 		Window::OnWndMessage(WM_INPUT, OnRawInput);
 		Window::OnCreate(IN_RawMouse_Init);
-	}
-
-	RawMouse::~RawMouse()
-	{
-		// Cursor is a shared resource. When the game window is
-		// destroyed, one might assume that the cursor
-		// automatically becomes unclipped. This is not the
-		// case—the cursor remains in a clipped state, locked to
-		// the bounds of the now-nonexistent game window until
-		// we explicitly relinquish control.
-		//
-		// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-clipcursor#remarks
-		//
-		ClipCursor(NULL);
 	}
 }

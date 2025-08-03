@@ -1,6 +1,5 @@
-
-#include "Events.hpp"
 #include "MapRotation.hpp"
+#include "Events.hpp"
 #include "Party.hpp"
 
 namespace Components
@@ -228,6 +227,12 @@ namespace Components
 		{
 			Logger::Print(Game::CON_CHANNEL_SERVER, "Not performing map rotation as sv_dontRotate is true\n");
 			SVDontRotate.set(true);
+			return false;
+		}
+
+		if (Party::IsEnabled() && Dvar::Var("party_host").get<bool>())
+		{
+			Logger::Warning(Game::CON_CHANNEL_SERVER, "Not performing map rotation as we are hosting a lobby server!\n");
 			return false;
 		}
 

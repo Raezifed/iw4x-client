@@ -1,5 +1,5 @@
-#include "Changelog.hpp"
 #include "News.hpp"
+#include "Changelog.hpp"
 #include "StartupMessages.hpp"
 #include "rapidjson/document.h"
 #include "version.h"
@@ -67,7 +67,7 @@ namespace Components
 		{
 			return std::nullopt;
 		}
-			
+
 
 		if (!menuItem["show"].GetBool())
 			return std::nullopt;
@@ -117,7 +117,7 @@ namespace Components
 
 		UIScript::Add("visitWebsite", []([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info)
 		{
-			Utils::OpenUrl("https://alterware.dev");
+			Utils::OpenUrl("https://iw4x.dev");
 		});
 
 		Localization::Set("MPUI_CHANGELOG_TEXT", "Loading...");

@@ -34,7 +34,7 @@ namespace Components
 
 		void preDestroy() override;
 
-		static void Refresh([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info);
+		static void Refresh(bool is_retry);
 		static void RefreshVisibleList([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info);
 		static void RefreshVisibleListInternal([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info, bool refresh = false);
 		static void UpdateVisibleList([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info);
@@ -173,7 +173,7 @@ struct std::hash<Components::ServerList::ServerInfo>
 		hash ^= std::hash<std::string>()(x.hostname);
 		hash ^= std::hash<std::string>()(x.mapname);
 		hash ^= std::hash<std::string>()(x.mod);
-		hash ^= std::hash<std::uint32_t>()(*reinterpret_cast<const std::uint32_t*>(&x.addr.getIP().bytes[0]));
+		hash ^= std::hash<std::uint32_t>()(*reinterpret_cast<const std::uint32_t*>(x.addr.getIP().bytes));
 		hash ^= x.clients;
 
 		return hash;
