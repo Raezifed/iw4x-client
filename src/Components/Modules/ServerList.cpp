@@ -13,6 +13,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
+#include <version.hpp>
 
 namespace Components
 {
@@ -34,6 +35,10 @@ namespace Components
 	Dvar::Var ServerList::UIServerSelectedMap;
 	Dvar::Var ServerList::NETServerQueryLimit;
 	Dvar::Var ServerList::NETServerFrames;
+	Dvar::Var ServerList::NETServerDeadTimeout;
+	Dvar::Var ServerList::UIBrowserEnableFilters;
+
+	std::vector<std::string> ServerList::HostnameFilters;
 
 	std::vector<ServerList::ServerInfo>* ServerList::GetList()
 	{
@@ -204,16 +209,11 @@ namespace Components
 
 		if (tempList.empty())
 		{
-			Refresh(false);
+			Refresh();
 		}
 		else
 		{
-			list->clear();
-
 			std::lock_guard _(RefreshContainer.mutex);
-
-			RefreshContainer.sendCount = 0;
-			RefreshContainer.sentCount = 0;
 
 			for (const auto& server : tempList)
 			{
@@ -224,7 +224,10 @@ namespace Components
 
 	void ServerList::RefreshVisibleList([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info)
 	{
-		RefreshVisibleListInternal(UIScript::Token(), info);
+		Scheduler::Once([info] ()
+		{
+			RefreshVisibleListInternal(UIScript::Token (), info);
+		}, Scheduler::Pipeline::CLIENT);
 	}
 
 	void ServerList::RefreshVisibleListInternal([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info, bool refresh)
@@ -238,7 +241,7 @@ namespace Components
 
 		if (refresh)
 		{
-			Refresh(false);
+			Refresh();
 			return;
 		}
 
@@ -248,6 +251,7 @@ namespace Components
 		auto ui_browserShowPassword = Dvar::Var("ui_browserShowPassword").get<int>();
 		auto ui_browserMod = Dvar::Var("ui_browserMod").get<int>();
 		auto ui_joinGametype = (*Game::ui_joinGametype)->current.integer;
+		auto ui_browserEnableFilters = UIBrowserEnableFilters.get<bool>();
 
 		for (unsigned int i = 0; i < list->size(); ++i)
 		{
@@ -270,6 +274,9 @@ namespace Components
 
 			// Filter by gametype
 			if (ui_joinGametype > 0 && (ui_joinGametype - 1) < *Game::gameTypeCount && Game::gameTypes[(ui_joinGametype - 1)].gameType != serverInfo->gametype) continue;
+
+			// Filter servers by hostname blocklist
+			if (ui_browserEnableFilters && IsHostnameFiltered(serverInfo->hostname)) continue;
 
 			VisibleList.push_back(i);
 		}
@@ -353,63 +360,110 @@ namespace Components
 		Logger::Print("Response from the master server was successfully parsed. We got {} servers\n", count);
 	}
 
-	void ServerList::Refresh(bool is_retry)
+	void ServerList::Refresh()
 	{
 		Dvar::Var("ui_serverSelected").set(false);
 
 		auto* list = GetList();
-		if (list) list->clear();
 
-		VisibleList.clear();
+		const bool hasCachedServers = list && !list->empty ();
+
+		// Clear the visible list only when presenting the online view *without*
+		// a populated cache. Favourites and offline entries arrive through their
+		// own asynchronous channels and should retain continuity rather than
+		// flicker in and out of existence.
+		//
+		// In other words: only the online list gets the broom, and only when
+		// it shows up empty-handed.
+		//
+		if (!hasCachedServers && IsOnlineList())
+			VisibleList.clear ();
 
 		{
 			std::lock_guard _(RefreshContainer.mutex);
 			RefreshContainer.servers.clear();
-			RefreshContainer.sendCount = 0;
-			RefreshContainer.sentCount = 0;
+
+			// Record that the visible set must be rebuilt after the first discovery
+			// pass when starting without a cache. Note that in this situation the
+			// browser has no prior ordering or selection state, so the initial
+			// snapshot must drive the first stable view.
+			//
+			RefreshContainer.needsInitialRefresh = true;
 		}
 
 		if (IsOfflineList())
 		{
 			Discovery::Perform();
+
+			// After LAN discovery completes, rebuild the visible list so that any
+			// newly-found offline servers are surfaced to the UI.
+			//
+			Scheduler::Once([]()
+			{
+				RefreshVisibleListInternal(UIScript::Token(), nullptr);
+			}, Scheduler::Pipeline::CLIENT);
 		}
 		else if (IsOnlineList())
 		{
+			// Warms the list early and lets the first discovery cycle reconcile
+			// cached state with the actual network view.
+			//
+			if (hasCachedServers && list)
+			{
+				for (const auto& server : *list)
+				{
+					InsertRequest(server.addr);
+				}
+			}
+
 			const auto masterPort = (*Game::com_masterPort)->current.unsignedInt;
 			const auto* masterServerName = (*Game::com_masterServerName)->current.string;
 
-			RefreshContainer.awatingList = true;
+			RefreshContainer.awaitingList = true;
 			RefreshContainer.awaitTime = Game::Sys_Milliseconds();
 
-			Toast::Show("cardicon_headshot", "Server Browser", "Fetching servers...", 3000);
-
-			const auto host = is_retry ? "nocf.iw4x.dev" : "iw4x.dev";
-			const auto url = std::format("http://{}/v1/servers/iw4x?protocol={}", host, PROTOCOL);
-			const auto reply = Utils::WebIO("IW4x", url).setTimeout(5000)->get();
-			if (reply.empty() && is_retry)
+			if (!hasCachedServers)
 			{
-				Logger::Print("Response from {} was empty or the request timed out. Using the Node System\n", url);
-				Toast::Show("cardicon_headshot", "^1Error", std::format("Could not get a response from {}. Using the Node System", url), 5000);
-				UseMasterServer = false;
-				return;
-			}
-			else if (reply.empty()) {
-				Logger::Print("Couldn't reach main server, retrying backup server\n");
-				Toast::Show("cardicon_headshot", "^1Error", std::format("Could not get a response from {}. Retrying backup server", url), 5000);
-				Refresh(true);
-				return;
+				Toast::Show("cardicon_headshot", "Server Browser", "Fetching servers...", 3000);
 			}
 
-			RefreshContainer.awatingList = false;
+			std::jthread([masterServerName, masterPort]()
+			{
+				const auto host = "master.iw4x.io";
+				const auto url = std::format("http://{}/v1/servers/iw4x?protocol={}", host, PROTOCOL);
+				const auto reply = Utils::WebIO("IW4x", url).setTimeout(5000)->get();
 
-			ParseNewMasterServerResponse(reply);
+				Scheduler::Once([reply, masterServerName, masterPort, url]()
+				{
+					{
+						std::lock_guard _(RefreshContainer.mutex);
+						RefreshContainer.awaitingList = false;
+					}
 
-			// TODO: Figure out what to do with this. Leave it to avoid breaking other code
-			RefreshContainer.host = Network::Address(std::format("{}:{}", masterServerName, masterPort));
+					if (reply.empty())
+					{
+						Logger::Print("Response from {} was empty or the request timed out, falling back to node system.\n", url);
+						Toast::Show("cardicon_headshot", "^1Error", std::format("Could not get a response from {}, falling back to node system.\n", url), 5000);
+						UseMasterServer = false;
+						return;
+					}
+
+					ParseNewMasterServerResponse(reply);
+					RefreshContainer.host = Network::Address(std::format("{}:{}", masterServerName, masterPort));
+				}, Scheduler::Pipeline::CLIENT);
+			}).detach();
 		}
 		else if (IsFavouriteList())
 		{
 			LoadFavourties();
+
+			// Same as discovery, that is, after favourites are loaded, rebuild the
+			// visible list to make them surfaced to the UI.
+			//
+			Scheduler::Once([]()
+			{
+				RefreshVisibleListInternal(UIScript::Token(), nullptr);
+			}, Scheduler::Pipeline::CLIENT);
 		}
 	}
 
@@ -500,7 +554,432 @@ namespace Components
 		auto* list = GetList();
 		if (list) list->clear();
 
-		RefreshVisibleListInternal(UIScript::Token(), nullptr);
+		Scheduler::Once([] ()
+		{
+			RefreshVisibleListInternal(UIScript::Token (), nullptr);
+		}, Scheduler::Pipeline::CLIENT);
+	}
+
+	void ServerList::CreateDefaultFiltersFile()
+	{
+		// Default filters for offensive server names
+		//
+		static const std::vector<std::string> defaultFilters = {
+			// Anti-Black slurs
+			//
+			"nigger", "nigga", "negro", "negroid", "nigglet", "nig", "nigg", "nignog",
+			"nagger", "naggers", "knee grow", "kneegers", "dindu", "dindu nuffin",
+			"jogger", "joggers", "coon", "coons", "darkie", "darky", "jigaboo",
+			"jiggaboo", "jigga", "jigg", "sambo", "spook", "spade", "spades",
+			"porch monkey", "jungle bunny", "tar baby", "golliwog", "pickaninny",
+			"picaninny", "mammy", "uncle tom", "house negro", "house nigger",
+			"field nigger", "cotton picker", "moon cricket", "mud shark", "mudshark",
+			"coal burner", "coalburner", "oil driller", "shitskin", "brownie",
+			"ape", "chimp", "chimping", "chimpout", "monkey", "gorilla", "baboon",
+			"orangutan", "ooga booga", "ook", "eek", "we wuz", "wewuz", "kangz",
+			"sheeit", "gibs", "gibsmedat",
+
+			// Antisemitic slurs
+			//
+			"kike", "kyke", "hebe", "heeb", "hymie", "yid", "shylock", "zhid",
+			"zhydy", "oven dodger", "lampshade", "big nose", "hooked nose",
+			"happy merchant", "shekel", "shekels", "goyim", "goy", "schlomo",
+			"shlomo", "globalist", "globalists", "noticer", "noticing", "early life",
+
+			// Anti-Asian slurs
+			//
+			"chink", "chinks", "chinky", "chinaman", "ching chong", "chingchong",
+			"ching chang", "gook", "gooky", "gooks", "slant", "slanty", "slanteye",
+			"slant eye", "zipperhead", "zipper head", "slope", "slopes", "slopehead",
+			"rice nigger", "ricenigger", "yellowskin", "jap", "japs", "nip", "nips",
+			"tojo", "bucktooth", "dog eater", "dogeater", "cat eater", "bat eater",
+			"bat soup", "kung flu", "china virus",
+
+			// Anti-Hispanic slurs
+			///
+			"spic", "spick", "spics", "beaner", "beaners", "wetback", "wet back",
+			"wetbacks", "greaser", "greasers", "border bunny", "border hopper",
+			"border jumper", "taco bender", "taco nigger", "mojado", "sudaca",
+			"oaxaco", "meskin", "messican", "anchor baby",
+
+			// Anti-South Asian/Middle Eastern slurs
+			//
+			"paki", "pakki", "pakkis", "pakis", "curry muncher", "currymuncher",
+			"curry nigger", "currynigger", "dot head", "dothead", "towel head",
+			"towelhead", "raghead", "rag head", "diaper head", "diaperhead",
+			"sand nigger", "sandnigger", "sand monkey", "camel jockey", "cameljockey",
+			"camel fucker", "hajji", "haji", "hadji", "muzzie", "muzzies", "mozzie",
+			"muzzrat", "muzrat", "goat fucker", "goatfucker", "dune coon", "dunecoon",
+			"durka", "durka durka", "ahab", "apu", "pajeet", "streetshitter",
+			"street shitter", "poo in loo", "poo in the loo", "bobs and vagene",
+
+			// Anti-Indigenous slurs
+			//
+			"redskin", "redskins", "injun", "injuns", "squaw", "prairie nigger",
+			"wagon burner", "timber nigger", "casino nigger",
+
+			// Anti-Aboriginal slurs
+			//
+			"abo", "abbo", "abbos", "boong", "boonga", "coonass", "lubra",
+			"petrol sniffer",
+
+			// Anti-White slurs
+			//
+			"cracker", "cracka", "crackers", "honky", "honkey", "honkies",
+			"peckerwood", "redneck", "rednecks", "hillbilly", "white trash",
+			"whitetrash", "trailer trash", "trailer park", "euro trash", "eurotrash",
+			"snow roach", "ice chimp", "cave beast",
+
+			// European ethnic slurs
+			//
+			"wop", "wops", "dago", "dagos", "guinea", "guineas", "guido", "guidos",
+			"greaseball", "greaseballs", "eyetie", "goombah", "polack", "polak",
+			"polacks", "hunky", "bohunk", "kraut", "krauts", "jerry", "jerries",
+			"fritz", "hun", "huns", "squarehead", "frog", "frogs", "frenchie",
+			"surrender monkey", "limey", "limeys", "pom", "poms", "pommy", "rosbif",
+			"fenian", "fenians", "taig", "taigs", "mick", "micks", "paddy", "paddies",
+			"pikey", "pikeys", "gyppo", "gypo", "gippo", "gypsy", "gypsies", "gipsy",
+			"zigeuner", "tzigane",
+
+			// Homophobic slurs
+			//
+			"faggot", "faggots", "fag", "fags", "fagg", "faggy", "fagget", "fagit",
+			"phaggot", "fudge packer", "fudgepacker", "butt pirate", "rump ranger",
+			"ass bandit", "turd burglar", "pillow biter", "shirt lifter",
+			"sausage jockey", "cocksucker", "cock sucker", "cock gobbler",
+			"knob jockey", "homo", "homos", "homosex", "queer", "queers", "queermo",
+			"poof", "poofs", "poofter", "poofters", "ponce", "pansy", "pansies",
+			"fairy", "fairies", "nancy", "nancy boy", "nance", "fruity", "fruitcake",
+			"batty boy", "battyboy", "batty man", "battyman", "chi chi man",
+			"chichi man", "bum boy", "bumboy", "bender", "benders", "woofter",
+			"sodomite", "sodomites", "bugger", "buggers", "buggery",
+			"dyke", "dykes", "dike", "bulldyke", "lesbo", "lesbos", "lezzie",
+			"lezbo", "lezza", "rug muncher", "carpet muncher", "muff diver",
+			"bean flicker",
+
+			// Transphobic slurs
+			//
+			"tranny", "trannies", "trannie", "trannys", "troon", "troons", "trooner",
+			"trooning", "troid", "shemale", "shemales", "she male", "sheboy",
+			"ladyboy", "ladyboys", "lady boy", "heshe", "he she", "shim", "shims",
+			"trap", "traps", "tgirl", "tgirls", "t girl", "newhalf", "futanari",
+			"chick with dick", "chickwithdick", "chicks with dicks", "dickgirl",
+			"dick girl", "man in dress", "man in a dress", "dude in dress",
+			"guy in dress", "its a man", "it is a man", "its a dude", "its a guy",
+			"actually a man", "actually a dude", "actually a guy",
+			"not a woman", "not a real", "not a girl",
+			"attack helicopter", "apache helicopter", "i identify as", "identify as a",
+			"41 percent", "42 percent", "forty one percent", "forty two percent",
+			"an hero", "anhero", "rope yourself", "get the rope", "dilate", "dilating",
+			"have sex incel", "will never be", "never be a woman", "never be a man",
+			"never be female", "never be male", "never pass", "wont pass", "dont pass",
+			"you will never", "ywnbaw", "hon", "hons", "hugbox",
+			"agp", "agps", "autogynephile", "autogynephilia", "hsts", "blanchard",
+			"transsexual", "transexual", "transvestite", "crossdresser", "cross dresser",
+			"sissy", "sissies", "sissyboy", "sissy boy", "femboy", "femboys", "fem boy",
+			"bussy", "boipucci", "boypussy", "mouthfeel",
+			"gender confused", "gender confusion", "gender ideology", "gender madness",
+			"gender woo", "genderist", "transmaxxer", "transmaxxing",
+			"two genders", "2 genders", "only 2 genders", "only two genders",
+			"basic biology", "xx xy", "chromosomes",
+			"trans cult", "trans agenda", "transgender agenda", "transcult",
+			"trans ideology", "trans women arent", "trans men arent",
+			"terf", "terfs", "terfism", "gender critical", "gendercrit",
+			"groomer", "groomers", "grooming", "child groomer", "groom children",
+			"grooming kids",
+
+			// Ableist slurs
+			//
+			"retard", "retards", "retarded", "ree", "reee", "reeee",
+			"tard", "tards", "libtard", "libtards", "conservatard", "trumptard",
+			"demotard", "fucktard", "fucktards", "fagtard", "asstard",
+			"sperg", "spergs", "sperging", "spergout",
+			"spaz", "spazz", "spazzy", "spastic", "spastics", "spacca", "spacker",
+			"mong", "mongs", "mongol", "mongols", "mongoloid", "mongoloids",
+			"mongo", "mongaloid", "downie", "downies", "downs", "potatoe",
+			"window licker", "windowlicker", "helmet", "drooler",
+			"cripple", "cripples", "gimp", "gimpy",
+			"midget", "midgets", "dwarf", "dwarfs", "freak", "freaks", "deformed",
+			"autist", "autists", "autistic", "aspie", "aspies", "assburger",
+			"asperger", "sped", "special ed", "schizo", "schizos", "psycho", "lunatic",
+
+			// Pedophilia accusations
+			//
+			"pedo", "pedos", "pedophile", "pedophiles", "paedo", "paedophile",
+			"nonce", "nonces", "kiddy fiddler", "kiddie fiddler", "child molester",
+			"child rapist", "kid toucher", "diddler", "chester", "chomo",
+
+			// Misogynistic slurs
+			//
+			"whore", "whores", "slut", "sluts", "slutty", "skank", "skanks", "skanky",
+			"thot", "thots", "begone thot", "hoe", "hoes", "hoebag",
+			"cunt", "cunts", "cunty", "bitch", "bitches", "bitchy",
+			"twat", "twats", "twatwaffle",
+			"cum dumpster", "cumdumpster", "cum bucket", "cumbucket", "cum rag",
+			"cumrag", "cum slut", "cumslut", "cum guzzler", "cumguzzler",
+			"cock sleeve", "cock holster", "cock socket", "cock warmer", "sperm bank",
+
+			// Sexual violence
+			//
+			"rape", "raped", "raping", "rapist", "rapey", "rapeable",
+
+			// Suicide/self-harm encouragement
+			//
+			"kill yourself", "kys", "kyll yourself", "neck yourself",
+			"go die", "die slow", "hope you die", "i hope you die",
+			"drink bleach", "eat bleach", "bleach yourself",
+			"jump off", "slit wrists", "cut yourself", "end yourself", "end it",
+			"cancer", "get cancer", "die of cancer", "cancerous",
+			"aids", "get aids", "die of aids",
+
+			// Nazi/white supremacist
+			//
+			"kill all", "exterminate", "genocide", "ethnic cleansing",
+			"gas the", "gas them", "gassed", "gassing",
+			"oven", "ovens", "put in oven", "bake them", "shower", "showers",
+			"holocaust", "holohoax", "holohaux", "holocost", "shoah",
+			"six million", "6 million", "6 gorillion",
+			"auschwitz", "dachau", "treblinka", "birkenau", "zyklon",
+			"hitler", "fuhrer", "fuehrer", "adolf",
+			"heil", "hiel", "seig", "sieg heil", "sieg",
+			"nazi", "nazis", "nazism", "neonazi", "neo nazi",
+			"natsoc", "national socialist", "third reich", "reich",
+			"swastika", "hakenkreuz",
+			"1488", "1352", "1384", "88", "hh", "14 words", "fourteen words",
+			"white power", "whitepower", "white pride", "whitepride",
+			"white is right", "wpww", "rahowa",
+			"kkk", "klan", "klux", "ku klux", "grand wizard",
+			"lynch", "lynching", "hang the", "hanging", "noose", "strange fruit",
+			"race traitor", "race mixing", "race mixer", "miscegenation", "mixing races",
+			"final solution", "day of the rope", "dotr",
+			"untermensch", "subhuman", "subhumans", "mud people", "mudpeople",
+			"race war", "racewar", "rwds",
+			"race realist", "race realism", "racial realist", "hbd",
+			"iq differences", "crime statistics", "despite being",
+			"13 percent", "13 50", "1350",
+			"zog", "zionist", "zionists", "jew world order", "jwo", "nwo",
+			"great replacement", "white genocide",
+			"clown world", "clownworld", "honk honk", "honkler",
+			"fren", "frens", "frenworld",
+			"boogaloo", "big igloo", "big luau",
+			"alphabet people", "degeneracy", "degenerate", "degenerates"
+		};
+
+		nlohmann::json root;
+		root["filters"] = defaultFilters;
+
+		Utils::IO::WriteFile(FiltersFile, root.dump(1, '\t'));
+		Logger::Print("Created default hostname filters file with {} entries\n", defaultFilters.size());
+	}
+
+	void ServerList::LoadFilters()
+	{
+		HostnameFilters.clear();
+
+		// If the file is gone, we recreate it with defaults so the user has a
+		// template to work with.
+		//
+		if (!Utils::IO::FileExists(FiltersFile))
+			CreateDefaultFiltersFile();
+
+		const auto s (Utils::IO::ReadFile(FiltersFile));
+		if (s.empty())
+			return;
+
+		// We are lenient here: if the JSON is malformed, we just log it and
+		// move on with an empty list rather than crashing the game loop.
+		//
+		nlohmann::json j;
+		try
+		{
+			j = nlohmann::json::parse(s);
+		}
+		catch (const nlohmann::json::parse_error& e)
+		{
+			Logger::PrintError(Game::CON_CHANNEL_ERROR, "JSON Parse Error in filters file: {}\n", e.what());
+			return;
+		}
+
+		// Expecting a specific structure {"filters": [...]}. If we get anything
+		// else, we assume the user messed up the config manually.
+		//
+		if (!j.is_object() || !j.contains("filters") || !j["filters"].is_array())
+		{
+			Logger::Print("Filters file is invalid! Expected {\"filters\": [...]}\n");
+			return;
+		}
+
+		const auto& fs (j["filters"]);
+		HostnameFilters.reserve(fs.size());
+
+		for (const auto& f : fs)
+		{
+			if (f.is_string())
+			{
+				auto v (f.get<std::string>());
+				if (!v.empty())
+				{
+					// We normalize the rule immediately upon loading. This way, we don't
+					// have to normalize the rule every time we check a hostname, only
+					// the incoming hostname needs normalization.
+					//
+					auto n (NormalizeHostname(v));
+					if (!n.empty())
+					{
+						// Typically, checking for whole-word matches requires logic to
+						// handle the start/end of the string differently from the middle
+						// (e.g., checking if index==0 or isspace(prev_char)).
+						//
+						// That said, our normalization strategy intentionally converts
+						// *all* structural boundaries (CamelCase splits, underscores, dots,
+						// leet-speak transitions) into spaces.
+						//
+						// So instead here we pad the filter (and the hostname later), to
+						// convert the "Word Boundary Problem" into a simple "Substring
+						// Problem".
+						//
+						{
+							n.insert(0, 1, ' ');
+							n.push_back(' ');
+						}
+
+						HostnameFilters.push_back(n);
+					}
+				}
+			}
+		}
+
+		Logger::Debug("Loaded {} hostname filters\n", HostnameFilters.size());
+	}
+
+	std::string ServerList::NormalizeHostname(const std::string& h)
+	{
+		// First, strip the visual noise (colors) and canonicalize case. We operate
+		// on the raw string data to map "visual" characters to their structural
+		// equivalents.
+		//
+		auto s (TextRenderer::StripColors(h));
+
+		std::string r;
+		r.reserve(s.size());
+
+		int lcr (0);
+		bool sp (true);
+
+		for (const auto c : s)
+		{
+			// Flatten l33tspeak. We aren't trying to be linguistically perfect; we
+			// just want to crush variants like 's3rv3r' and 'server' into the same
+			// bucket to prevent bypasses.
+			//
+			// Note also that we treat them as "neutral" regarding the lowercase run.
+			// That is, they don't increment it, but they don't reset it either. The
+			// general idea is to allows "n00bS" to still split if the surrounding
+			// context warrants it.
+			//
+			switch (c)
+			{
+				case '0': r += 'o'; sp = false; break;
+				case '1': r += 'i'; sp = false; break;
+				case '3': r += 'e'; sp = false; break;
+				case '4': r += 'a'; sp = false; break;
+				case '5': r += 's'; sp = false; break;
+				case '6': r += 'g'; sp = false; break;
+				case '7': r += 't'; sp = false; break;
+				case '8': r += 'b'; sp = false; break;
+				case '9': r += 'g'; sp = false; break;
+				case '@': r += 'a'; sp = false; break;
+				case '$': r += 's'; sp = false; break;
+				case '!': r += 'i'; sp = false; break;
+				case '|': r += 'i'; sp = false; break;
+				case '+': r += 't'; sp = false; break;
+				default:
+				{
+					if (std::isalpha(static_cast<unsigned char>(c)))
+					{
+						const bool upper (std::isupper(static_cast<unsigned char>(c)));
+
+						// Heuristic: Only split if we are transitioning from a *stable*
+						// lowercase state (more than 1 char) to uppercase.
+						//
+						// This protects:
+						// 1. "hEllo", "wOrld" (1 char prefix)
+						// 2. "NaMeLeSs" (Alternating caps)
+						//
+						// But still splits:
+						// 1. "NamelessNoobs" (Run of 's' 's' -> 'N')
+						//
+						if (upper)
+						{
+							if (lcr > 1)
+							{
+								r += ' ';
+								sp = true;
+							}
+							lcr = 0;
+						}
+						else
+						{
+							lcr++;
+						}
+
+						r += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+						sp = false;
+					}
+					else if (!sp)
+					{
+						r += ' ';
+						lcr = 0;
+						sp = true;
+					}
+					break;
+				}
+			}
+		}
+
+		if (!r.empty() && r.back() == ' ')
+			r.pop_back();
+
+		return r;
+	}
+
+	bool ServerList::IsHostnameFiltered(const std::string& h)
+	{
+		if (HostnameFilters.empty())
+			return false;
+
+		// We have to pay the cost of normalization here to ensure the input matches
+		// the format of our pre-processed filters.
+		//
+		const auto n (NormalizeHostname(h));
+
+		// Pad with spaces, see LoadFilters above.
+		//
+		std::string p;
+		p.reserve(n.size() + 2);
+		p += ' ';
+		p += n;
+		p += ' ';
+
+		// A linear scan is acceptable here since the filter list is expected to be
+		// small (human-managed blacklist). If this ever grows to thousands of
+		// entries, we should move to Aho-Corasick or a similar multi-pattern
+		// search.
+		//
+		for (const auto& f : HostnameFilters)
+		{
+			// Note: 'f' is already padded (done in LoadFilters). We just check
+			// if the padded filter exists inside our padded hostname.
+			//
+			if (p.find(f) != std::string::npos)
+			{
+				Logger::Debug("hostname filter: '{}' (normalized: '{}') matched rule '{}'\n",
+					             h, n, f);
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	void ServerList::LoadFavourties()
@@ -545,18 +1024,259 @@ namespace Components
 		}
 	}
 
+	void ServerList::LoadServerCache()
+	{
+		std::string cache (Utils::IO::ReadFile (ServerCacheFile));
+		if (cache.empty ())
+			return;
+
+		nlohmann::json root;
+		try
+		{
+			root = nlohmann::json::parse (cache);
+		}
+		catch (const nlohmann::json::parse_error& e)
+		{
+			Logger::PrintError(Game::CON_CHANNEL_ERROR,
+												"JSON parse error in server cache: {}\n",
+												e.what());
+
+			// Treat malformed cache data as non-fatal. The cache is simply ignored
+			// and a fresh list will be constructed via the normal discovery path.
+			//
+			return;
+		}
+
+		if (!root.is_object () ||
+				!root.contains ("servers") ||
+				!root["servers"].is_array ())
+		{
+			Logger::Print ("server cache file is invalid\n");
+
+			// non-fatal. (see above)
+			//
+			return;
+		}
+
+		const auto& servers = root["servers"];
+
+		// Always load cache into OnlineList, not the current view's list
+		//
+		auto* list = &OnlineList;
+
+		Logger::Print ("loading {} cached servers...\n", servers.size ());
+
+		for (const nlohmann::json& entry : servers)
+		{
+			if (!entry.is_object ())
+				continue;
+
+			try
+			{
+				ServerInfo s;
+
+				s.addr          = Network::Address (entry.value ("address", ""));
+				s.hostname      = entry.value ("hostname", "");
+				s.mapname       = entry.value ("mapname", "");
+				s.gametype      = entry.value ("gametype", "");
+				s.mod           = entry.value ("mod", "");
+				s.version       = entry.value ("version", "");
+				s.clients       = entry.value ("clients", 0);
+				s.bots          = entry.value ("bots", 0);
+				s.maxClients    = entry.value ("maxClients", 0);
+				s.password      = entry.value ("password", false);
+				s.ping          = entry.value ("ping", 999);
+				s.matchType     = entry.value ("matchType", 0);
+				s.securityLevel = entry.value ("securityLevel", 0);
+				s.protocol      = entry.value ("protocol", PROTOCOL);
+				s.hardcore      = entry.value ("hardcore", false);
+				s.svRunning     = entry.value ("svRunning", false);
+				s.aimassist     = entry.value ("aimassist", false);
+				s.voice         = entry.value ("voice", false);
+				s.lastSeen      = entry.value ("lastSeen", std::time (nullptr));
+
+				std::hash<ServerInfo> h;
+				s.hash = h (s);
+
+				if (!IsServerDuplicate (list, s))
+					list->push_back (s);
+			}
+			catch (const std::exception& e)
+			{
+				Logger::PrintError (Game::CON_CHANNEL_ERROR,
+														"error loading cached server: {}\n",
+														e.what ());
+			}
+		}
+
+		// Recompute visibility after population.
+		//
+		Scheduler::Once([]()
+		{
+			RefreshVisibleListInternal(UIScript::Token(), nullptr);
+		}, Scheduler::Pipeline::CLIENT);
+
+		Logger::Print ("loaded {} servers from cache\n", list->size ());
+	}
+
+	void ServerList::SaveServerCache ()
+	{
+		if (!IsOnlineList ())
+			return;
+
+		auto* list = GetList();
+		if (list == nullptr || list->empty ())
+			return;
+
+		nlohmann::json::array_t servers;
+
+		for (const ServerInfo& s : *list)
+		{
+			nlohmann::json e;
+
+			e["address"]       = s.addr.getString ();
+			e["hostname"]      = s.hostname;
+			e["mapname"]       = s.mapname;
+			e["gametype"]      = s.gametype;
+			e["mod"]           = s.mod;
+			e["version"]       = s.version;
+			e["clients"]       = s.clients;
+			e["bots"]          = s.bots;
+			e["maxClients"]    = s.maxClients;
+			e["password"]      = s.password;
+			e["ping"]          = s.ping;
+			e["matchType"]     = s.matchType;
+			e["securityLevel"] = s.securityLevel;
+			e["protocol"]      = s.protocol;
+			e["hardcore"]      = s.hardcore;
+			e["svRunning"]     = s.svRunning;
+			e["aimassist"]     = s.aimassist;
+			e["voice"]         = s.voice;
+			e["lastSeen"]      = s.lastSeen;
+
+			servers.push_back (e);
+		}
+
+		nlohmann::json root;
+
+		root["servers"]   = servers;
+		root["timestamp"] = std::time (nullptr);
+		root["version"]   = REVISION_STR;
+
+		Utils::IO::WriteFile (ServerCacheFile, root.dump ());
+
+		// Note that ephemeral entries are not included, so the cached set may
+		// differ from the full set returned by live node queries.
+		//
+		Logger::Print ("saved {} servers to cache\n", servers.size ());
+	}
+
+	void ServerList::RemoveDeadServers ()
+	{
+		if (!IsOnlineList ())
+			return;
+
+		auto* list (GetList ());
+		if (list == nullptr || list->empty ())
+			return;
+
+		const std::time_t now (std::time (nullptr));
+		const std::time_t timeout (NETServerDeadTimeout.get<int> ());
+
+		std::size_t removed (0);
+
+		// Prune entries that have not produced a response within the configured
+		// timeout window.
+		//
+		for (auto i (list->begin ()); i != list->end (); )
+		{
+			if (now - i->lastSeen > timeout)
+			{
+				Logger::Print ("removing dead server: {} (last seen {} seconds ago)\n",
+											i->addr.getString (), now - i->lastSeen);
+
+				i = list->erase (i);
+				++removed;
+			}
+			else
+				++i;
+		}
+
+		if (removed > 0)
+		{
+			Logger::Print ("removed {} dead servers from cache\n", removed);
+
+			// Note that we do not persist the cache here. While it may appear natural
+			// to save immediately after pruning, the periodic cache-save interval is
+			// aligned with the heartbeat/dead-check cadence. In practice, removal
+			// only occurs during those cycles, which guarantees that a scheduled
+			// cache write will follow in the same frame or shortly thereafter.
+			//
+			Scheduler::Once([] ()
+			{
+				RefreshVisibleListInternal(UIScript::Token (), nullptr);
+			}, Scheduler::Pipeline::CLIENT);
+		}
+	}
+
+	void ServerList::HeartbeatServers()
+	{
+		if (!IsOnlineList ())
+			return;
+
+		auto* list (GetList ());
+		if (list == nullptr || list->empty ())
+			return;
+
+		Logger::Print ("starting heartbeat check for {} cached servers\n",
+									list->size ());
+
+		// Note that we issue getinfo requests for each cached server to refresh
+		// without requiring a full discovery sweep.
+		//
+		std::lock_guard lock (RefreshContainer.mutex);
+
+		for (const ServerInfo& s : *list)
+		{
+			bool queued (false);
+
+			for (const Container::ServerContainer& c : RefreshContainer.servers)
+			{
+				if (c.target == s.addr)
+				{
+					queued = true;
+					break;
+				}
+			}
+
+			if (!queued)
+			{
+				Container::ServerContainer c;
+				c.sent       = false;
+				c.target     = s.addr;
+				c.sourceList = 1; // OnlineList
+
+				RefreshContainer.servers.push_back (c);
+			}
+		}
+
+		Logger::Print ("queued {} servers for heartbeat ping\n",
+									 RefreshContainer.servers.size());
+	}
+
 	void ServerList::InsertRequest(Network::Address address)
 	{
 		std::lock_guard _(RefreshContainer.mutex);
 
-		Container::ServerContainer container;
-		container.sent = false;
-		container.target = address;
+		Container::ServerContainer c;
+		c.sent   = false;
+		c.target = address;
+		c.sourceList = (*Game::ui_netSource)->current.integer;
 
 		auto alreadyInserted = false;
-		for (auto& server : RefreshContainer.servers)
+		for (auto& s : RefreshContainer.servers)
 		{
-			if (server.target == container.target)
+			if (s.target == c.target)
 			{
 				alreadyInserted = true;
 				break;
@@ -564,25 +1284,7 @@ namespace Components
 		}
 
 		if (!alreadyInserted)
-		{
-			RefreshContainer.servers.push_back(container);
-
-			auto* list = GetList();
-			if (list)
-			{
-				for (auto& server : *list)
-				{
-					if (server.addr == container.target)
-					{
-						--RefreshContainer.sendCount;
-						--RefreshContainer.sentCount;
-						break;
-					}
-				}
-			}
-
-			++RefreshContainer.sendCount;
-		}
+			RefreshContainer.servers.push_back(c);
 	}
 
 	void ServerList::Insert(const Network::Address& address, const Utils::InfoString& info)
@@ -625,6 +1327,7 @@ namespace Components
 			server.svRunning = info.get("sv_running") == "1"s;
 			server.ping = (Game::Sys_Milliseconds() - i->sendTime);
 			server.addr = address;
+			server.lastSeen = std::time(nullptr);
 
 			std::hash<ServerInfo> hashFn;
 			server.hash = hashFn(server);
@@ -642,6 +1345,24 @@ namespace Components
 			server.gametype = TextRenderer::StripMaterialTextIcons(server.gametype);
 			server.mod = TextRenderer::StripMaterialTextIcons(server.mod);
 
+			// Select the appropriate server list based on the origin of this query.
+			// While the mapping is intentionally explicit rather than "clever", it
+			// also serves as a gentle reminder that magic numbers age poorly.
+			//
+			// Note that an unrecognised source is treated as a logic error rather
+			// than something we try to auto-correct, if the caller is confused,
+			// letting it fail fast is usually kinder to both of us.
+			//
+			std::vector<ServerInfo>* l = nullptr;
+			const auto sourceList = i->sourceList;
+			switch (sourceList)
+			{
+				case 0: l = &OfflineList; break;
+				case 1: l = &OnlineList; break;
+				case 2: l = &FavouriteList; break;
+				default: return;
+			}
+
 			// Remove server from queue
 			i = RefreshContainer.servers.erase(i);
 
@@ -652,46 +1373,43 @@ namespace Components
 				return;
 			}
 
-			// Check if already inserted and remove
-			auto* list = GetList();
-			if (!list) return;
-
-			std::size_t k = 0;
-			for (auto j = list->begin(); j != list->end(); ++k)
+			// Check if already inserted and update in-place
+			bool found (false);
+			for (auto& s: *l)
 			{
-				if (j->addr == address)
+				if (s.addr == address)
 				{
-					j = list->erase(j);
-				}
-				else
-				{
-					++j;
-				}
-			}
-
-			// Also remove from visible list
-			for (auto j = VisibleList.begin(); j != VisibleList.end();)
-			{
-				if (*j == k)
-				{
-					j = VisibleList.erase(j);
-				}
-				else
-				{
-					++j;
+					// Update entry in-place to retain list position.
+					//
+					s = server;
+					found = true;
+					break;
 				}
 			}
 
 			if (info.get("gamename") == "IW4"s && server.matchType)
 			{
-				auto* lList = GetList();
-				if (lList)
+				// NOTE: The visible list is not refreshed here during normal
+				// operation. Recomputing visibility on each heartbeat causes the
+				// browser to re-sort while player counts fluctuate, which makes
+				// entries appear to "jump" during normal activity.
+				//
+				// ... Well, turn out that during initial discovery, the browser is
+				// still forming its first stable view, so entries must be allowed to
+				// surface incrementally as responses arrive.
+				//
+				if (!found && !IsServerDuplicate (l, server))
 				{
-					if (!IsServerDuplicate(lList, server))
+					l->push_back (server);
+				}
+
+				const auto currentSource = (*Game::ui_netSource)->current.integer;
+				if (RefreshContainer.needsInitialRefresh && sourceList == currentSource)
+				{
+					Scheduler::Once([]()
 					{
-						lList->push_back(server);
 						RefreshVisibleListInternal(UIScript::Token(), nullptr);
-					}
+					}, Scheduler::Pipeline::CLIENT);
 				}
 			}
 		}
@@ -802,6 +1520,56 @@ namespace Components
 	void ServerList::Frame()
 	{
 		static Utils::Time::Interval frameLimit;
+		static Utils::Time::Interval cacheSaveInterval;
+		static Utils::Time::Interval heartbeatInterval;
+		static Utils::Time::Interval deadServerCheckInterval;
+		static bool wasOpen = false;
+
+		// Skip update processing when the browser view is inactive.
+		//
+		if (!IsServerListOpen ())
+		{
+			std::lock_guard _ (RefreshContainer.mutex);
+
+			if (!RefreshContainer.servers.empty ())
+				RefreshContainer.servers.clear ();
+
+			wasOpen = false;
+			return;
+		}
+
+		// Re-entry into the browser must clears accumulated idle time of existing
+		// entries to avoid classifying them as dead upon return.
+		//
+		//
+		if (!wasOpen)
+		{
+			wasOpen = true;
+
+			auto* l (GetList ());
+
+			if (l != nullptr && !l->empty ())
+			{
+				const auto now (std::time (nullptr));
+
+				for (auto& s: *l)
+					s.lastSeen = now;
+			}
+
+			// Rebuild the visible list unconditionally when entering the browser.
+			// That is, whatever state the discovery subsystem believes it is in, the
+			// UI should start from a clean snapshot.
+			//
+			// Note that we also avoid any temptation to "optimize" based on
+			// assumptions about prior activity, which tends to work until the one
+			// time it doesn't.
+			//
+			Scheduler::Once([]()
+			{
+				RefreshVisibleListInternal(UIScript::Token(), nullptr);
+			}, Scheduler::Pipeline::CLIENT);
+		}
+
 		const auto interval = static_cast<int>(1000.0f / static_cast<float>(NETServerFrames.get<int>()));
 
 		if (!frameLimit.elapsed(std::chrono::milliseconds(interval)))
@@ -811,20 +1579,57 @@ namespace Components
 
 		frameLimit.update();
 
+		// FIXME: Intervals should come from a dvar (NET...). In practice, they
+		// interacts poorly with server frame processing, so their value is kept
+		// local for now.
+
+		// Periodically send heartbeat pings to cached servers
+		//
+		if (heartbeatInterval.elapsed(std::chrono::seconds(30)))
+		{
+			heartbeatInterval.update();
+
+			if (IsOnlineList())
+				HeartbeatServers();
+		}
+
+		// Periodically check and remove dead servers
+		//
+		if (deadServerCheckInterval.elapsed(std::chrono::seconds(30)))
+		{
+			deadServerCheckInterval.update();
+
+			if (IsOnlineList())
+				RemoveDeadServers();
+		}
+
+		// Periodically write current online list to on-disk cache
+		//
+		if (cacheSaveInterval.elapsed(std::chrono::seconds(30)))
+		{
+			cacheSaveInterval.update ();
+
+			if (IsOnlineList ())
+			{
+				if (auto* list = GetList (); list != nullptr && !list->empty ())
+					SaveServerCache ();
+			}
+		}
+
 		std::lock_guard _(RefreshContainer.mutex);
 
-		if (RefreshContainer.awatingList)
+		if (RefreshContainer.awaitingList)
 		{
 			// Stop counting if we are out of the server browser menu
 			if (!IsServerListOpen())
 			{
-				RefreshContainer.awatingList = false;
+				RefreshContainer.awaitingList = false;
 			}
 
 			// Check if we haven't got a response within 5 seconds
 			if (Game::Sys_Milliseconds() - RefreshContainer.awaitTime > 5000)
 			{
-				RefreshContainer.awatingList = false;
+				RefreshContainer.awaitingList = false;
 				Logger::Print("We haven't received a response from the master within {} seconds!\n", (Game::Sys_Milliseconds() - RefreshContainer.awaitTime) / 1000);
 
 				UseMasterServer = false;
@@ -834,6 +1639,9 @@ namespace Components
 
 		const auto challenge = Utils::Cryptography::Rand::GenerateChallenge();
 		auto requestLimit = NETServerQueryLimit.get<int>();
+
+		bool hadPendingRequests = false;
+
 		for (std::size_t i = 0; i < RefreshContainer.servers.size() && requestLimit > 0; ++i)
 		{
 			auto* server = &RefreshContainer.servers[i];
@@ -842,13 +1650,38 @@ namespace Components
 			// Found server we can send a request to
 			server->sent = true;
 			requestLimit--;
+			hadPendingRequests = true;
 
 			server->sendTime = Game::Sys_Milliseconds();
 			server->challenge = challenge;
 
-			++RefreshContainer.sentCount;
-
 			Network::SendCommand(server->target, "getinfo", server->challenge);
+		}
+
+		// If the list is populated and no requests remain pending, then the
+		// discovery phase has produced a stable snapshot. That is, the flag is
+		// lowered and the on-disk cache may be written.
+		//
+		// ... Actually we must check if there are any pending operations:
+		//
+		// 1. Server query requests in the queue (servers.empty())
+		// 2. Waiting for master server response (awaitingList)
+		//
+		// And only clear the flag and save cache when all operations are complete.
+		//
+		const bool hasAnyPendingRequests = !RefreshContainer.servers.empty() || RefreshContainer.awaitingList;
+
+		if (RefreshContainer.needsInitialRefresh && !hasAnyPendingRequests)
+		{
+			auto* l (GetList ());
+
+			if (l != nullptr && !l->empty ())
+			{
+				RefreshContainer.needsInitialRefresh = false;
+
+				if (IsOnlineList ())
+					SaveServerCache ();
+			}
 		}
 
 		UpdateVisibleInfo();
@@ -865,7 +1698,37 @@ namespace Components
 
 		Game::Dvar_SetInt(*Game::ui_netSource, source);
 
-		RefreshVisibleListInternal(UIScript::Token(), nullptr, true);
+		// Handle source transitions. Two conditions are relevant:
+		//
+		// 1. Cache not in flight: issue a normal Refresh() to load the new source.
+		// 2. Cache in flight: allow the cache path to invoke Refresh(), then schedule
+		//    a visible-list rebuild once the load completes.
+		//
+		Scheduler::Once([]()
+		{
+			bool cacheLoading = false;
+			{
+				std::lock_guard _(RefreshContainer.mutex);
+				cacheLoading = RefreshContainer.loadingCache;
+			}
+
+			if (!cacheLoading)
+			{
+				Refresh();
+			}
+			else
+			{
+				// Cache load is in progress. The cache path will invoke Refresh() on
+				// completion, but a visible-list rebuild is still required after a
+				// source change. Delay the rebuild briefly to allow the cache load to
+				// finish.
+				//
+				Scheduler::Once([]()
+				{
+					RefreshVisibleListInternal(UIScript::Token(), nullptr);
+				}, Scheduler::Pipeline::CLIENT, 200ms);
+			}
+		}, Scheduler::Pipeline::CLIENT);
 	}
 
 	void ServerList::UpdateGameType()
@@ -879,7 +1742,10 @@ namespace Components
 
 		Game::Dvar_SetInt(*Game::ui_joinGametype, gametype);
 
-		RefreshVisibleListInternal(UIScript::Token(), nullptr);
+		Scheduler::Once([]()
+		{
+			RefreshVisibleListInternal(UIScript::Token(), nullptr);
+		}, Scheduler::Pipeline::CLIENT);
 	}
 
 	void ServerList::UpdateVisibleInfo()
@@ -936,6 +1802,8 @@ namespace Components
 		FavouriteList.clear();
 		VisibleList.clear();
 
+		RefreshContainer.loadingCache = false;
+
 		Events::OnDvarInit([]
 			{
 				UIServerSelected = Dvar::Register<bool>("ui_serverSelected", false,
@@ -947,6 +1815,10 @@ namespace Components
 					1, 10, Dedicated::IsEnabled() ? Game::DVAR_NONE : Game::DVAR_ARCHIVE, "Amount of server queries per frame");
 				NETServerFrames = Dvar::Register<int>("net_serverFrames", 30,
 					1, 60, Dedicated::IsEnabled() ? Game::DVAR_NONE : Game::DVAR_ARCHIVE, "Amount of server query frames per second");
+				NETServerDeadTimeout = Dvar::Register<int>("net_serverDeadTimeout", 60,
+					1, 604800, Dedicated::IsEnabled() ? Game::DVAR_NONE : Game::DVAR_ARCHIVE, "Seconds after which unresponsive servers are removed from cache");
+				UIBrowserEnableFilters = Dvar::Register<bool>("ui_browserEnableFilters", true,
+					Dedicated::IsEnabled() ? Game::DVAR_NONE : Game::DVAR_ARCHIVE, "Filter servers with offensive hostnames");
 			});
 
 		// Fix ui_netsource dvar
@@ -958,7 +1830,7 @@ namespace Components
 			{
 				if (RefreshContainer.host != address) return; // Only parse from host we sent to
 
-				RefreshContainer.awatingList = false;
+				RefreshContainer.awaitingList = false;
 
 				std::lock_guard _(RefreshContainer.mutex);
 
@@ -986,20 +1858,65 @@ namespace Components
 			});
 
 		// Set default masterServerName + port and save it
-		Utils::Hook::Set<const char*>(0x60AD92, "dp.iw4x.dev");
+		Utils::Hook::Set<const char*>(0x60AD92, "dp.iw4x.io");
 		Utils::Hook::Set<std::uint8_t>(0x60AD90, Game::DVAR_NONE); // masterServerName
 		Utils::Hook::Set<std::uint8_t>(0x60ADC6, Game::DVAR_NONE); // masterPort
 
 		// Add server list feeder
 		UIFeeder::Add(2.0f, GetServerCount, GetServerText, SelectServer);
 
+		// Add server list filters
+		LoadFilters();
+
 		// Add required UIScripts
 		UIScript::Add("UpdateFilter", RefreshVisibleList);
 		UIScript::Add("RefreshFilter", UpdateVisibleList);
-
-		UIScript::Add("RefreshServers", [](const UIScript::Token&, const Game::uiInfo_s*) {
-			ServerList::Refresh(false);
+		UIScript::Add("ReloadFilters", [](const UIScript::Token&, const Game::uiInfo_s*)
+			{
+				LoadFilters();
+				RefreshVisibleListInternal(UIScript::Token(), nullptr);
 			});
+		UIScript::Add("RefreshServers",
+									[](const UIScript::Token&, const Game::uiInfo_s*)
+		{
+			// Attempt to populate online list from on-disk cache before issuing a
+			// network-driven refresh.
+			//
+			auto* onlineList = &OnlineList;
+
+			{
+				std::lock_guard _(RefreshContainer.mutex);
+				if (RefreshContainer.loadingCache)
+				{
+					return; // cache load already in progress
+				}
+			}
+
+			if (onlineList != nullptr && onlineList->empty())
+			{
+				{
+					std::lock_guard _(RefreshContainer.mutex);
+					RefreshContainer.loadingCache = true;
+				}
+
+				std::jthread([]()
+				{
+					LoadServerCache();
+					Scheduler::Once([]()
+					{
+						{
+							std::lock_guard _(RefreshContainer.mutex);
+							RefreshContainer.loadingCache = false;
+						}
+						ServerList::Refresh();
+					}, Scheduler::Pipeline::CLIENT);
+				}).detach();
+
+				return; // defer refresh until after the cache load completes
+			}
+
+			ServerList::Refresh();
+		});
 
 		UIScript::Add("JoinServer", []([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info)
 			{
@@ -1081,12 +1998,5 @@ namespace Components
 
 		// Add frame callback
 		Scheduler::Loop(Frame, Scheduler::Pipeline::CLIENT);
-	}
-
-	void ServerList::preDestroy()
-	{
-		std::lock_guard _(RefreshContainer.mutex);
-		RefreshContainer.awatingList = false;
-		RefreshContainer.servers.clear();
 	}
 }

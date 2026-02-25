@@ -6,9 +6,6 @@ namespace Components
 	{
 	public:
 		Auth();
-		~Auth();
-
-		void preDestroy() override;
 
 		static void StoreKey();
 		static void LoadKey(bool force = false);
@@ -32,7 +29,7 @@ namespace Components
 		public:
 			bool cancel;
 			bool generating;
-			std::thread thread;
+			std::jthread thread;
 			uint32_t targetLevel;
 			int startTime;
 			std::string command;

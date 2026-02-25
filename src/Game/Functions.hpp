@@ -66,6 +66,9 @@ namespace Game
 	typedef void(*CG_SetupWeaponConfigString_t)(int localClientNum, unsigned int weapIndex);
 	extern CG_SetupWeaponConfigString_t CG_SetupWeaponConfigString;
 
+	typedef int(*CL_GetSnapshot_t)(int localClientNum, int snapshotNumber, Game::snapshot_s* snapshot);
+	extern CL_GetSnapshot_t CL_GetSnapshot;
+
 	typedef void(*Cmd_AddCommand_t)(const char* cmdName, void(*function), cmd_function_s* allocedCmd, int isKey);
 	extern Cmd_AddCommand_t Cmd_AddCommand;
 
@@ -380,6 +383,9 @@ namespace Game
 	typedef void(*PM_CheckLadderMove_t)(pmove_s* pm, pml_t* pml);
 	extern PM_CheckLadderMove_t PM_CheckLadderMove;
 
+	typedef void (*PM_Weapon_t)(Game::pmove_s* pm, Game::pml_t* pml);
+	extern PM_Weapon_t PM_Weapon;
+
 	typedef Font_s*(*R_RegisterFont_t)(const char* asset, int safe);
 	extern R_RegisterFont_t R_RegisterFont;
 
@@ -539,7 +545,13 @@ namespace Game
 	typedef int(*Bullet_Fire_t)(gentity_s* attacker, float spread, weaponParms* wp, gentity_s* weaponEnt, PlayerHandIndex hand, int gameTime);
 	extern Bullet_Fire_t Bullet_Fire;
 
-	typedef void(*IN_RecenterMouse_t)();
+	typedef void(*IN_MouseEvent_t)(int flags);
+	extern IN_MouseEvent_t IN_MouseEvent;
+
+	typedef void(*IN_Frame_t)();
+	extern IN_Frame_t IN_Frame;
+
+	typedef BOOL(*IN_RecenterMouse_t)();
 	extern IN_RecenterMouse_t IN_RecenterMouse;
 
 	typedef void(*IN_MouseMove_t)();

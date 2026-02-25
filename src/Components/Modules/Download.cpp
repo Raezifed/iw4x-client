@@ -28,7 +28,7 @@ namespace Components
 
 	Download::ClientDownload Download::CLDownload;
 
-	std::thread Download::ServerThread;
+	std::jthread Download::ServerThread;
 	volatile bool Download::Terminate;
 	bool Download::ServerRunning;
 
@@ -80,7 +80,7 @@ namespace Components
 		CLDownload.timeStampBytes_ = 0;
 		CLDownload.isPrivate_ = needPassword;
 		CLDownload.target_ = Party::Target();
-		CLDownload.thread_ = std::thread(ModDownloader, &CLDownload);
+		CLDownload.thread_ = std::jthread(ModDownloader, &CLDownload);
 	}
 
 	bool Download::ParseModList(ClientDownload* download, const std::string& list)
@@ -1069,28 +1069,6 @@ namespace Components
 			SV_wwwDownload = Dvar::Register<bool>("sv_wwwDownload", false, Game::DVAR_NONE, "Set to true to enable downloading maps/mods from an external server.");
 			SV_wwwBaseUrl = Dvar::Register<const char*>("sv_wwwBaseUrl", "", Game::DVAR_NONE, "Set to the base url for the external map download.");
 		});
-	}
-
-	Download::~Download()
-	{
-		if (ServerRunning)
-		{
-			mg_mgr_free(&Mgr);
-		}
-	}
-
-	void Download::preDestroy()
-	{
-		Terminate = true;
-		if (ServerThread.joinable())
-		{
-			ServerThread.join();
-		}
-
-		if (!Dedicated::IsEnabled())
-		{
-			CLDownload.clear();
-		}
 	}
 
 	bool Download::ClientDownload::File::allowed() const

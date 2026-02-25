@@ -114,7 +114,7 @@ namespace Components
 			return;
 		}
 
-		if (Steam::Enabled() && !Friends::IsInvisible() && !Dvar::Var("cl_anonymous").get<bool>() && Steam::Proxy::SteamUser_)
+		if (!Friends::IsInvisible() && !Dvar::Var("cl_anonymous").get<bool>() && Steam::Proxy::SteamUser_)
 		{
 			infostr.set("realsteamId", Utils::String::VA("%llX", Steam::Proxy::SteamUser_->GetSteamID().bits));
 		}
@@ -387,19 +387,6 @@ namespace Components
 		if (!force && GuidKey.isValid()) return;
 
 		const auto guidPath = GetGUIDFilePath();
-
-#ifndef REGENERATE_INVALID_KEY
-		// Migrate old file
-		const auto oldGuidPath = "players/guid.dat";
-		if (Utils::IO::FileExists(oldGuidPath))
-		{
-			if (MoveFileA(oldGuidPath, guidPath.data()))
-			{
-				Utils::IO::RemoveFile(oldGuidPath);
-			}
-		}
-#endif
-
 		const auto guidFile = Utils::IO::ReadFile(guidPath);
 
 		Proto::Auth::Certificate cert;
@@ -451,7 +438,7 @@ namespace Components
 			Command::Execute("openmenu security_increase_popmenu", true);
 
 			// Start thread
-			TokenContainer.thread = std::thread([&level]()
+			TokenContainer.thread = std::jthread([&level]()
 				{
 					TokenContainer.generating = true;
 					TokenContainer.hashes = 0;
@@ -668,21 +655,5 @@ namespace Components
 				TokenContainer.cancel = true;
 				Logger::Print("Token incrementation process canceled!\n");
 			});
-	}
-
-	Auth::~Auth()
-	{
-		StoreKey();
-	}
-
-	void Auth::preDestroy()
-	{
-		TokenContainer.cancel = true;
-		TokenContainer.generating = false;
-
-		if (TokenContainer.thread.joinable())
-		{
-			TokenContainer.thread.join();
-		}
 	}
 }

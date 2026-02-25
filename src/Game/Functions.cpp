@@ -29,6 +29,8 @@ namespace Game
 	CG_GetTeamName_t CG_GetTeamName = CG_GetTeamName_t(0x4B6210);
 	CG_SetupWeaponConfigString_t CG_SetupWeaponConfigString = CG_SetupWeaponConfigString_t(0x4BD520);
 
+	CL_GetSnapshot_t CL_GetSnapshot = CL_GetSnapshot_t(0x46B7C0);
+
 	Cmd_AddCommand_t Cmd_AddCommand = Cmd_AddCommand_t(0x470090);
 	Cmd_AddServerCommand_t Cmd_AddServerCommand = Cmd_AddServerCommand_t(0x4DCE00);
 	Cmd_ExecuteSingleCommand_t Cmd_ExecuteSingleCommand = Cmd_ExecuteSingleCommand_t(0x609540);
@@ -151,6 +153,7 @@ namespace Game
 	PMoveSingle_t PMoveSingle = PMoveSingle_t(0x5743E0);
 
 	PM_CheckLadderMove_t PM_CheckLadderMove = PM_CheckLadderMove_t(0x573D00);
+	PM_Weapon_t PM_Weapon = PM_Weapon_t(0x44C380);
 
 	R_AddCmdDrawStretchPic_t R_AddCmdDrawStretchPic = R_AddCmdDrawStretchPic_t(0x509770);
 	R_AllocStaticIndexBuffer_t R_AllocStaticIndexBuffer = R_AllocStaticIndexBuffer_t(0x51E7A0);
@@ -232,6 +235,8 @@ namespace Game
 	Weapon_RocketLauncher_Fire_t Weapon_RocketLauncher_Fire = Weapon_RocketLauncher_Fire_t(0x424680);
 	Bullet_Fire_t Bullet_Fire = Bullet_Fire_t(0x4402C0);
 
+	IN_Frame_t IN_Frame = IN_Frame_t(0x475E10);
+	IN_MouseEvent_t IN_MouseEvent = IN_MouseEvent_t(0x4C84D0);
 	IN_RecenterMouse_t IN_RecenterMouse = IN_RecenterMouse_t(0x463D80);
 
 	IN_MouseMove_t IN_MouseMove = IN_MouseMove_t(0x64C490);

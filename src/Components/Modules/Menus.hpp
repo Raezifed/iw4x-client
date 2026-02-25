@@ -9,8 +9,6 @@ namespace Components
 	public:
 		Menus();
 
-		void preDestroy() override;
-
 		static void Add(const std::string& menu);
 
 		static std::vector<Game::menuDef_t*> LoadMenuByName_Recursive(const std::string& menu);
@@ -96,7 +94,7 @@ namespace Components
 			if (PrintMenuDebug.get<bool>())
 			{
 				const std::string msg = std::vformat(fmt, std::make_format_args(args...));
-				const std::string preformatted = std::format("[MENUS] {:X} {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), msg);
+				const std::string preformatted = std::format("[MENUS] {:X} {}\n", std::hash<std::jthread::id>{}(std::this_thread::get_id()), msg);
 				Logger::Print(preformatted);
 			}
 		}

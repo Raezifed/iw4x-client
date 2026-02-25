@@ -13,9 +13,6 @@ namespace Components
 	{
 	public:
 		Download();
-		~Download();
-
-		void preDestroy() override;
 
 		static void InitiateClientDownload(const std::string& mod, bool needPassword, bool map = false, bool downloadOnly = false);
 		static void InitiateMapDownload(const std::string& map, bool needPassword);
@@ -92,7 +89,7 @@ namespace Components
 			Network::Address target_;
 			std::string hashedPassword_;
 			std::string mod_;
-			std::thread thread_;
+			std::jthread thread_;
 
 			std::size_t totalBytes_;
 			std::size_t downBytes_;
@@ -148,7 +145,7 @@ namespace Components
 		};
 
 		static ClientDownload CLDownload;
-		static std::thread ServerThread;
+		static std::jthread ServerThread;
 		static volatile bool Terminate;
 		static bool ServerRunning;
 

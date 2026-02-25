@@ -117,7 +117,7 @@ namespace Components
 
 		UIScript::Add("visitWebsite", []([[maybe_unused]] const UIScript::Token& token, [[maybe_unused]] const Game::uiInfo_s* info)
 		{
-			Utils::OpenUrl("https://iw4x.dev");
+			Utils::OpenUrl("https://iw4x.io");
 		});
 
 		Localization::Set("MPUI_CHANGELOG_TEXT", "Loading...");
@@ -153,9 +153,5 @@ namespace Components
 		Changelog::SetChangelog(changelog.value());
 
 		ProcessPopmenus(jsonDocument);
-	}
-
-	void News::preDestroy()
-	{
 	}
 }

@@ -7259,6 +7259,38 @@ namespace Game
 		int fileSizeForPicmip[4];
 	};
 
+	struct GfxConfiguration
+	{
+	  bool inited;
+	  unsigned int maxClientViews;
+	  unsigned int entCount;
+	  unsigned int entnumNone;
+	  unsigned int entnumOrdinaryEnd;
+	  int threadContextCount;
+	  int critSectCount;
+	  int value40;
+	  const char *zoneFiles[7];
+	  bool defaultFullscreen;
+	  unsigned __int16 defaultFullscreenFlags;
+	  int defaultMode;
+	  int value900;
+	  int value450;
+	};
+
+	struct GfxWindowParms
+	{
+	  HWND *hwnd;
+	  int hz;
+	  bool fullscreen;
+	  int x;
+	  int y;
+	  int sceneWidth;
+	  int sceneHeight;
+	  int displayWidth;
+	  int displayHeight;
+	  int aaSamples;
+	};
+
 	enum $1FA877C9772E9F0892A93F52A91453E9
 	{
 		MAPTYPE_NONE = 0x0,
@@ -9502,15 +9534,18 @@ namespace Game
 		float swayOffset[3];
 		float recoilAngles[3];
 		float recoilSpeed[3];
-		char _pad2[22024];; // + 0x6A758
+		char _pad2[18600];
+		int weaponSelect;
+		int weaponSelectTime;
+		char _pad3[3416];
 		float compassMapWorldSize[2]; // + 0x73D64
-		char _pad3[0x74]; // + 0x73D6C
+		char _pad4[0x74]; // + 0x73D6C
 		float selectedLocation[2]; // + 0x73DE0
 		float selectedLocationAngle;
 		float selectedAngleLocation[2];
 		float selectedLocationPrev[2];
 		float selectedLocationAnglePrev;
-		char _pad4[0x89740];
+		char _pad5[0x89740];
 	};
 
 	static_assert(sizeof(cg_s) == 0xFD540);
@@ -12068,6 +12103,49 @@ namespace Game
 		int recenterMouse;
 		HHOOK__* lowLevelKeyboardHook;
 		unsigned int sysMsgTime;
+	};
+
+	enum weapAnimFiles_t
+	{
+		WEAP_ANIM_ROOT = 0x0,
+		WEAP_ANIM_IDLE = 0x1,
+		WEAP_ANIM_EMPTY_IDLE = 0x2,
+		WEAP_ANIM_FIRE = 0x3,
+		WEAP_ANIM_HOLD_FIRE = 0x4,
+		WEAP_ANIM_LASTSHOT = 0x5,
+		WEAP_ANIM_RECHAMBER = 0x6,
+		WEAP_ANIM_MELEE = 0x7,
+		WEAP_ANIM_MELEE_CHARGE = 0x8,
+		WEAP_ANIM_RELOAD = 0x9,
+		WEAP_ANIM_RELOAD_EMPTY = 0xA,
+		WEAP_ANIM_RELOAD_START = 0xB,
+		WEAP_ANIM_RELOAD_END = 0xC,
+		WEAP_ANIM_RAISE = 0xD,
+		WEAP_ANIM_FIRST_RAISE = 0xE,
+		WEAP_ANIM_BREACH_RAISE = 0xF,
+		WEAP_ANIM_DROP = 0x10,
+		WEAP_ANIM_ALT_RAISE = 0x11,
+		WEAP_ANIM_ALT_DROP = 0x12,
+		WEAP_ANIM_QUICK_RAISE = 0x13,
+		WEAP_ANIM_QUICK_DROP = 0x14,
+		WEAP_ANIM_EMPTY_RAISE = 0x15,
+		WEAP_ANIM_EMPTY_DROP = 0x16,
+		WEAP_ANIM_SPRINT_IN = 0x17,
+		WEAP_ANIM_SPRINT_LOOP = 0x18,
+		WEAP_ANIM_SPRINT_OUT = 0x19,
+		WEAP_ANIM_STUNNED_START = 0x1A,
+		WEAP_ANIM_STUNNED_LOOP = 0x1B,
+		WEAP_ANIM_STUNNED_END = 0x1C,
+		WEAP_ANIM_DETONATE = 0x1D,
+		WEAP_ANIM_NIGHTVISION_WEAR = 0x1E,
+		WEAP_ANIM_NIGHTVISION_REMOVE = 0x1F,
+		WEAP_ANIM_ADS_FIRE = 0x20,
+		WEAP_ANIM_ADS_LASTSHOT = 0x21,
+		WEAP_ANIM_ADS_RECHAMBER = 0x22,
+		WEAP_ANIM_ADS_UP = 0x23,
+		WEAP_ANIM_ADS_DOWN = 0x24,
+
+		NUM_WEAP_ANIMS,
 	};
 
 #pragma endregion

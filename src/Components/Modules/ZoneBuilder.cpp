@@ -20,7 +20,7 @@ namespace Components
 	DWORD ZoneBuilder::InterruptingThreadId;
 
 	volatile bool ZoneBuilder::CommandThreadTerminate = false;
-	std::thread ZoneBuilder::CommandThread;
+	std::jthread ZoneBuilder::CommandThread;
 	iw4of::api ZoneBuilder::ExporterAPI(GetExporterAPIParams());
 	std::string ZoneBuilder::DumpingZone{};
 
@@ -919,7 +919,7 @@ namespace Components
 
 	void ZoneBuilder::Com_Quitf_t()
 	{
-		ExitProcess(0);
+		Game::Sys_Quit();
 	}
 
 	void ZoneBuilder::CommandThreadCallback()
