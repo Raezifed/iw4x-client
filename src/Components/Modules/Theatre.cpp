@@ -283,6 +283,60 @@ namespace
 		UpdateScrambleBuffer(serverCommandSequence);
 		return serverCommandSequence;
 	}
+
+	template <bool STEAM_DEMO>
+	void CL_ReadDemoNetworkPacketStub()
+	{
+		assert(Game::clientConnections->demoplaying);
+
+		auto* clc = Game::clientConnections;
+		auto* cgs = Game::cgsArray;
+
+		const auto serverCommandSequence = clc->serverCommandSequence;
+		const auto lastExecutedServerCommand = clc->lastExecutedServerCommand;
+
+		// Check if the command string backlog is equal to or greater than half the size of command string buffer (128 / 2 = 64)
+		// and execute them now to make room for new command strings without overwriting unprocessed ones
+		// likely to happen when fast forwarding, very likely when rewinding
+		if (lastExecutedServerCommand + std::ssize(clc->serverCommands) / 2 <= serverCommandSequence)
+		{
+			if (lastExecutedServerCommand == 0)
+			{
+				// Update the old server command sequences, otherwise we may be executing old server commands when rewinding
+				// this would ignore command strings if they were to be included in the gamestate message
+				clc->lastExecutedServerCommand = serverCommandSequence;
+				cgs->serverCommandSequence = serverCommandSequence;
+
+				// Reset the viewmodel otherwise it may be hidden for a short while when rewinding
+				auto* cg = Game::cgArray;
+				cg->landTime = 0;
+
+				//
+				Components::Command::Execute("demoAddMissingStrings", false);
+				//Command::Execute("demoAddMissingStrings", false);
+				//
+			}
+			else
+			{
+				for (auto i = lastExecutedServerCommand + 1; i <= serverCommandSequence; ++i)
+				{
+					static constexpr auto mapRestart = (STEAM_DEMO) ? 'x' : 'B';
+					if (clc->serverCommands[i & 127][0] == mapRestart)
+					{
+						// Ignoring fast restart commands, because they crash in CG_ClearEntityFxHandles,
+						// because Game::cgArray->snap is a nullptr when rewinding
+						// they also appear to cause crashes when fast forwarding
+						clc->serverCommands[i & 127][0] = '\0';
+					}
+				}
+
+				Game::CG_ExecuteNewServerCommands(0, serverCommandSequence);
+			}
+
+			assert(cgs->serverCommandSequence == clc->serverCommandSequence
+				&& clc->lastExecutedServerCommand == clc->serverCommandSequence);
+		}
+	}
 }
 
 namespace Components
@@ -653,7 +707,16 @@ namespace Components
 
 	int Theatre::CL_FirstSnapshot_Stub()
 	{
-		if (CLAutoRecord.get<bool>() && !Game::clientConnections->demoplaying)
+		if (Game::clientConnections->demoplaying)
+		{
+			auto* sv_cheats = const_cast<Game::dvar_t*>(*Game::sv_cheats);
+			if (!sv_cheats->current.enabled)
+			{
+				sv_cheats->current.enabled = true;
+				sv_cheats->modified = true;
+			}
+		}
+		else if (CLAutoRecord.get<bool>())
 		{
 			std::vector<std::string> files;
 			auto demos = FileSystem::GetFileList("demos/", "dm_13");
@@ -675,7 +738,24 @@ namespace Components
 				FileSystem::_DeleteFile("demos", std::format("{}.json", files[i]));
 			}
 
-			Command::Execute(Utils::String::VA("record auto_%lld", std::time(nullptr)), true);
+			// Set attempt count to 50 to give the game ample opportunity to catch up,
+			// though it is expected to succeed on the first attempt
+			Scheduler::Schedule([syncAttempts = 50]() mutable
+			{
+				const auto serverCommandSequence = Game::clientConnections->serverCommandSequence;
+				const auto lastExecutedServerCommand = Game::clientConnections->lastExecutedServerCommand;
+
+				// Allow the game to catch up with the execution of the command strings in case they modify the game state strings,
+				// otherwise the demo may not contain all necessary game state strings
+				if (lastExecutedServerCommand == serverCommandSequence || --syncAttempts < 0)
+				{
+					const auto timestamp = static_cast<long long>(std::time(nullptr));
+					Command::Execute(Utils::String::VA("record auto_%lld", timestamp), true);
+					return true;
+				}
+
+				return false;
+			}, Scheduler::Pipeline::MAIN);
 		}
 
 		return Utils::Hook::Call<int()>(0x42BBB0)(); // DB_GetLoadedFlags
@@ -695,6 +775,122 @@ namespace Components
 		}
 	}
 
+	//
+	auto demoGetGamestateCallback = [](const Components::Command::Params* params)
+	{
+		if (params->size() != 2)
+		{
+			Components::Logger::Print("demoGetGamestate: invalid parameter count = {}, expected parameter count = {}\n", params->size(), 2);
+			return;
+		}
+
+		if (!Game::clientConnections->demoplaying && !(*Game::sv_cheats)->current.enabled)
+		{
+			Components::Logger::Print("demoGetGamestate: demo must be playing\n");
+			return;
+		}
+
+		const auto index = std::strtoul(params->get(1), nullptr, 10);
+		if (index > Game::CS_LAST)
+		{
+			Components::Logger::Print("demoGetGamestate: invalid index = {}, max index = {}\n", index, static_cast<unsigned int>(Game::CS_LAST));
+			return;
+		}
+
+		const auto* ptr = Game::CL_GetConfigString(index);
+		if (!ptr)
+		{
+			Components::Logger::Print("demoGetGamestate: invalid string address\n");
+			return;
+		}
+
+		Components::Logger::Print("demoGetGamestate: gamestate index {} = {}\n", index, ptr);
+	};
+
+	auto demoSetGamestateCallback = [](const Components::Command::Params* params)
+	{
+		typedef char* (*CL_ConfigstringModified_t)();
+		CL_ConfigstringModified_t CL_ConfigstringModified = CL_ConfigstringModified_t(0x5A1F50);
+
+		if (params->size() != 3)
+		{
+			Components::Logger::Print("demoSetGamestate: invalid parameter count = {}, expected parameter count = {}\n", params->size(), 3);
+			return;
+		}
+
+		if (!Game::clientConnections->demoplaying && !(*Game::sv_cheats)->current.enabled)
+		{
+			Components::Logger::Print("demoSetGamestate: demo must be playing\n");
+			return;
+		}
+
+		const auto index = std::strtoul(params->get(1), nullptr, 10);
+		if (index > Game::CS_LAST)
+		{
+			Components::Logger::Print("demoSetGamestate: invalid index = {}, max index = {}\n", index, static_cast<unsigned int>(Game::CS_LAST));
+			return;
+		}
+
+		CL_ConfigstringModified();
+
+		Components::Logger::Print("demoSetGamestate: gamestate index {} modified\n", index);
+	};
+
+	auto demoAddMissingStringsCallback = [](const Components::Command::Params*)
+	{
+		if (!Game::clientConnections->demoplaying && !(*Game::sv_cheats)->current.enabled)
+		{
+			Components::Logger::Print("demoAddMissingStrings: demo must be playing\n");
+			return;
+		}
+
+		static constexpr auto CS_TAGS = 2741;
+		static constexpr auto CS_TAGS_FIRST = CS_TAGS + 1;
+
+		auto findTagIndex = [](std::string_view sv) -> size_t
+		{
+			for (size_t i = CS_TAGS_FIRST, j = 0; i < CS_TAGS_FIRST + 10; ++i, ++j)
+			{
+				const auto* ptr = Game::CL_GetConfigString(i);
+				if (ptr && ptr == sv)
+				{
+					return j;
+				}
+			}
+
+			return 0;
+		};
+
+		constexpr std::array<std::string_view, 4> tagStrings
+		{
+			"tag_player",
+			"tag_stowed_back",
+			"tag_stow_back_mid_attach",
+			"tag_weapon"
+		};
+
+		for (size_t i = CS_TAGS_FIRST; i < CS_TAGS_FIRST + 10; ++i)
+		{
+			const auto* ptr = Game::CL_GetConfigString(i);
+			if (ptr && ptr[0] == '\0')
+			{
+				const auto tagIndex = findTagIndex(tagStrings[0]);
+				if (tagIndex < tagStrings.size())
+				{
+					for (size_t j = 0; j < tagStrings.size(); ++j)
+					{
+						Command::Execute(std::format("demoSetGamestate {} {}", CS_TAGS_FIRST + tagIndex + j, tagStrings[j]).c_str(), false);
+					}
+
+					Components::Logger::Print("demoAddMissingStrings: tag strings added\n");
+				}
+
+				break;
+			}
+		}
+	};
+	//
+
 	Theatre::Theatre()
 	{
 		AssertOffset(Game::clientConnection_t, demorecording, 0x40190);
@@ -703,7 +899,7 @@ namespace Components
 		AssertOffset(Game::clientConnection_t, serverMessageSequence, 0x2013C);
 
 		CLAutoRecord = Dvar::Register<bool>("cl_autoRecord", true, Game::DVAR_ARCHIVE, "Automatically record games");
-		CLDemosKeep = Dvar::Register<int>("cl_demosKeep", 30, 1, 999, Game::DVAR_ARCHIVE, "How many demos to keep with autorecord");
+		CLDemosKeep = Dvar::Register<int>("cl_demosKeep", 100, 1, 999, Game::DVAR_ARCHIVE, "How many demos to keep with autorecord");
 
 		if (Flags::HasFlag("steamdemo"))
 		{
@@ -722,15 +918,27 @@ namespace Components
 			Utils::Hook(0x5AC778, MSG_ReadLongStub4, HOOK_CALL).install()->quick(); // CL_ParseCommandString
 
 			Utils::Hook(0x5950A8, CL_GetSnapshotStub<SNAPSHOT_FIX_STEAM>, HOOK_CALL).install()->quick();
+
+			Utils::Hook(0x5A9CE8, CL_ReadDemoNetworkPacketStub<true>, HOOK_JUMP).install()->quick();
 		}
 		else if (Flags::HasFlag("retaildemo"))
 		{
 			Utils::Hook(0x5950A8, CL_GetSnapshotStub<SNAPSHOT_FIX_RETAIL>, HOOK_CALL).install()->quick();
+
+			Utils::Hook(0x5A9CE8, CL_ReadDemoNetworkPacketStub<false>, HOOK_JUMP).install()->quick();
 		}
 		else
 		{
 			Utils::Hook(0x5950A8, CL_GetSnapshotStub<SNAPSHOT_FIX_NONE>, HOOK_CALL).install()->quick();
+
+			Utils::Hook(0x5A9CE8, CL_ReadDemoNetworkPacketStub<false>, HOOK_JUMP).install()->quick();
 		}
+
+		//
+		Components::Command::Add("demoGetGamestate", demoGetGamestateCallback);
+		Components::Command::Add("demoSetGamestate", demoSetGamestateCallback);
+		Components::Command::Add("demoAddMissingStrings", demoAddMissingStringsCallback);
+		//
 
 		Utils::Hook(0x5A8370, GamestateWriteStub, HOOK_CALL).install()->quick();
 		Utils::Hook(0x5A85D2, RecordGamestateStub, HOOK_CALL).install()->quick();

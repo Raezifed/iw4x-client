@@ -22,6 +22,8 @@ namespace Components
 		{
 			Game::GpadAxesGlob axes;
 			unsigned nextScrollTime;
+			unsigned scrollHoldStartTime;
+			int scrollHoldKey;
 
 			GamePadGlobals();
 		};
@@ -84,14 +86,18 @@ namespace Components
 		static Dvar::Var gpad_buttonConfig;
 		static Dvar::Var gpad_menu_scroll_delay_first;
 		static Dvar::Var gpad_menu_scroll_delay_rest;
+		static Dvar::Var gpad_menu_scroll_delay_min;
+		static Dvar::Var gpad_menu_scroll_accel_time;
 		static Dvar::Var gpad_rumble;
 		static Dvar::Var gpad_use_hold_time;
 		static Dvar::Var gpad_button_release_delay_enabled;
 		static Dvar::Var gpad_button_release_delay;
 		static Dvar::Var gpad_button_release_delay_scale;
 		static Dvar::Var gpad_button_release_delay_sprint_only;
+		static Dvar::Var gpad_button_release_grace;
 
 		static unsigned buttonPressedTime[Game::MAX_GPAD_COUNT][Game::K_LAST_KEY];
+		static unsigned buttonReleaseTime[Game::MAX_GPAD_COUNT][Game::K_LAST_KEY];
 		static bool buttonPendingRelease[Game::MAX_GPAD_COUNT][Game::K_LAST_KEY];
 
 		static unsigned GetButtonReleaseDelay(int localClientNum);
