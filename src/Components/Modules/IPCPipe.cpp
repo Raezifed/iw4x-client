@@ -65,7 +65,7 @@ namespace Components
 		if (INVALID_HANDLE_VALUE != this->pipe && this->pipe)
 		{
 			this->threadAttached = true;
-			this->thread = std::thread(ReceiveThread, this);
+			this->thread = std::jthread(ReceiveThread, this);
 
 			Logger::Print("Pipe successfully created\n");
 			return true;
@@ -225,11 +225,5 @@ namespace Components
 			Logger::Print("Sending ping to pipe!\n");
 			Write("ping", {});
 		});
-	}
-
-	void IPCPipe::preDestroy()
-	{
-		ServerPipe.destroy();
-		ClientPipe.destroy();
 	}
 }

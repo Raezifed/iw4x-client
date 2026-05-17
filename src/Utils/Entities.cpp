@@ -1,3 +1,4 @@
+#include "Entities.hpp"
 
 namespace Utils
 {
@@ -82,10 +83,6 @@ namespace Utils
 		for (std::size_t i = 0; i < buffer.size(); ++i)
 		{
 			const auto character = buffer[i];
-			if (character == '{')
-			{
-				entity.clear();
-			}
 
 			switch (character)
 			{

@@ -1,3 +1,5 @@
+#include "Steam.hpp"
+
 #include "Components/Modules/StartupMessages.hpp"
 
 namespace Steam
@@ -102,37 +104,25 @@ namespace Steam
 		Callbacks::Results.clear();
 	}
 
-	bool Enabled()
-	{
-		static std::optional<bool> flag;
-
-		if (!flag.has_value())
-		{
-			flag = Components::Flags::HasFlag("nosteam");
-		}
-
-		return !flag.value();
-	}
-
 	extern "C"
 	{
 		bool SteamAPI_Init()
 		{
-			Proxy::SetGame(10190);
+      Proxy::SetGame(10190);
 
-			if (!Proxy::Inititalize())
-			{
+      if (!Proxy::Initialize())
+      {
 #ifdef _DEBUG
-				OutputDebugStringA("Steam proxy not initialized properly");
+        OutputDebugStringA("Steam proxy not initialized properly");
 #endif
-			}
-			else
-			{
-				Proxy::SetMod("IW4x: Modern Warfare 2");
-				Proxy::RunGame();
-			}
+      }
+      else
+      {
+        Proxy::SetMod("IW4x: Modern Warfare 2");
+        Proxy::RunGame();
+      }
 
-			return true;
+      return true;
 		}
 
 		void SteamAPI_RegisterCallResult(Callbacks::Base* result, uint64_t call)
@@ -153,7 +143,7 @@ namespace Steam
 
 		void SteamAPI_Shutdown()
 		{
-			Proxy::Uninititalize();
+			Proxy::UnInitialize();
 			Callbacks::Uninitialize();
 		}
 

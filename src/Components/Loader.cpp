@@ -1,5 +1,7 @@
 #include <Utils/InfoString.hpp>
 
+#include "Loader.hpp"
+
 #include "Modules/ArenaLength.hpp"
 #include "Modules/Auth.hpp"
 #include "Modules/Bans.hpp"
@@ -68,14 +70,13 @@
 #include "Modules/Vote.hpp"
 #include "Modules/Weapon.hpp"
 #include "Modules/Window.hpp"
+#include "Modules/Sound.hpp"
 
 #include "Modules/BotLib/lPrecomp.hpp"
 
 namespace Components
 {
 	bool Loader::Pregame = true;
-	bool Loader::Postgame = false;
-	bool Loader::Uninitializing = false;
 	std::vector<Component*> Loader::Components;
 
 	bool Loader::IsPregame()
@@ -83,21 +84,9 @@ namespace Components
 		return Pregame;
 	}
 
-	bool Loader::IsPostgame()
-	{
-		return Postgame;
-	}
-
-	bool Loader::IsUninitializing()
-	{
-		return Uninitializing;
-	}
-
 	void Loader::Initialize()
 	{
 		Pregame = true;
-		Postgame = false;
-		Uninitializing = false;
 		Utils::Memory::GetAllocator()->clear();
 
 		// High priority
@@ -172,6 +161,7 @@ namespace Components
 		Register(new ServerList());
 		Register(new Session());
 		Register(new SlowMotion());
+		Register(new Sound());
 		Register(new StartupMessages());
 		Register(new Stats());
 		Register(new StringTable());
@@ -194,60 +184,6 @@ namespace Components
 		Register(new BotLib::lPrecomp());
 
 		Pregame = false;
-
-		// Make sure preDestroy is called when the game shuts down
-		Scheduler::OnGameShutdown(PreDestroy);
-	}
-
-	void Loader::Uninitialize()
-	{
-		Uninitializing = true;
-		PreDestroyNoPostGame();
-
-		std::reverse(Components.begin(), Components.end());
-		for (auto& component : Components)
-		{
-#ifdef DEBUG
-			Logger::Print("Unregister component: {}\n", component->getName());
-#endif
-			delete component;
-		}
-
-		Components.clear();
-		Utils::Memory::GetAllocator()->clear();
-		Uninitializing = false;
-	}
-
-	void Loader::PreDestroy()
-	{
-		if (!Postgame)
-		{
-			Postgame = true;
-
-			auto components = Components;
-
-			std::reverse(components.begin(), components.end());
-			for (auto& component : components)
-			{
-				component->preDestroy();
-			}
-		}
-	}
-
-	void Loader::PreDestroyNoPostGame()
-	{
-		if (!Postgame)
-		{
-			auto components = Components;
-
-			std::reverse(components.begin(), components.end());
-			for (auto& component : components)
-			{
-				component->preDestroy();
-			}
-
-			Postgame = true;
-		}
 	}
 
 	void Loader::Register(Component* component)

@@ -1,3 +1,4 @@
+#include "Menus.hpp"
 #include "Party.hpp"
 #include "Events.hpp"
 
@@ -1583,11 +1584,7 @@ namespace Components
 		Add("ui_mp/startup_messages.menu");
 		Add("ui_mp/stats_reset.menu");
 		Add("ui_mp/stats_unlock.menu");
+		Add("ui_mp/stats_mod_warning.menu");
 		Add("ui_mp/theater_menu.menu");
-	}
-
-	void Menus::preDestroy()
-	{
-		// Let Windows handle the memory leaks for you!
 	}
 }

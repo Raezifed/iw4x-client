@@ -74,6 +74,9 @@ namespace Game
 	typedef void(*Sys_QuitAndStartProcess_t)(const char*);
 	extern Sys_QuitAndStartProcess_t Sys_QuitAndStartProcess;
 
+	typedef void(*Sys_Quit_t)();
+	extern Sys_Quit_t Sys_Quit;
+
 	typedef void(*Sys_QueEvent_t)(int time, int type, int value, int value2, int ptrLength, void* ptr);
 	extern Sys_QueEvent_t Sys_QueEvent;
 
@@ -82,8 +85,6 @@ namespace Game
 
 	extern RTL_CRITICAL_SECTION* s_criticalSection;
 
-	extern void Sys_QueEvents(int time, int type, int value2, int ptrLength, void* ptr);
-
 	extern void Sys_LockRead(FastCriticalSection* critSect);
 	extern void Sys_UnlockRead(FastCriticalSection* critSect);
 	extern void Sys_UnlockWrite(FastCriticalSection* critSect);
@@ -91,6 +92,8 @@ namespace Game
 	extern bool Sys_TryEnterCriticalSection(CriticalSection critSect);
 
 	extern HANDLE Sys_OpenFileReliable(const char* filename);
+
+	extern void Sys_QueEvents(int time, int type, int value2, int ptrLength, void* ptr);
 
 	class Sys
 	{

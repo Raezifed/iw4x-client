@@ -3,6 +3,12 @@
 // Unsorted function definitions
 namespace Game
 {
+	typedef void(__cdecl* __security_init_cookie_t)(void);
+	extern __security_init_cookie_t __security_init_cookie;
+
+	typedef int(* __tmainCRTStartup_t)(void);
+	extern __tmainCRTStartup_t __tmainCRTStartup;
+
 	typedef void(*AngleVectors_t)(float* angles, float* forward, float* right, float* up);
 	extern AngleVectors_t AngleVectors;
 
@@ -20,6 +26,9 @@ namespace Game
 
 	typedef const char* (*CopyStringInternal_t)(const char* str);
 	extern CopyStringInternal_t CopyStringInternal;
+
+	typedef void(*CG_ExecuteNewServerCommands_t)(int localClientNum, int latestSequence);
+	extern CG_ExecuteNewServerCommands_t CG_ExecuteNewServerCommands;
 
 	typedef void(*CG_DrawDisconnect_t)(int localClientNum);
 	extern CG_DrawDisconnect_t CG_DrawDisconnect;
@@ -59,6 +68,9 @@ namespace Game
 
 	typedef void(*CG_SetupWeaponConfigString_t)(int localClientNum, unsigned int weapIndex);
 	extern CG_SetupWeaponConfigString_t CG_SetupWeaponConfigString;
+
+	typedef int(*CL_GetSnapshot_t)(int localClientNum, int snapshotNumber, Game::snapshot_s* snapshot);
+	extern CL_GetSnapshot_t CL_GetSnapshot;
 
 	typedef void(*Cmd_AddCommand_t)(const char* cmdName, void(*function), cmd_function_s* allocedCmd, int isKey);
 	extern Cmd_AddCommand_t Cmd_AddCommand;
@@ -368,6 +380,15 @@ namespace Game
 	typedef void(*Playlist_ParsePlaylists_t)(const char* data);
 	extern Playlist_ParsePlaylists_t Playlist_ParsePlaylists;
 
+	typedef void(*PMoveSingle_t)(pmove_s* pm);
+	extern PMoveSingle_t PMoveSingle;
+
+	typedef void(*PM_CheckLadderMove_t)(pmove_s* pm, pml_t* pml);
+	extern PM_CheckLadderMove_t PM_CheckLadderMove;
+
+	typedef void (*PM_Weapon_t)(Game::pmove_s* pm, Game::pml_t* pml);
+	extern PM_Weapon_t PM_Weapon;
+
 	typedef Font_s*(*R_RegisterFont_t)(const char* asset, int safe);
 	extern R_RegisterFont_t R_RegisterFont;
 
@@ -527,17 +548,17 @@ namespace Game
 	typedef int(*Bullet_Fire_t)(gentity_s* attacker, float spread, weaponParms* wp, gentity_s* weaponEnt, PlayerHandIndex hand, int gameTime);
 	extern Bullet_Fire_t Bullet_Fire;
 
-	typedef void(*IN_RecenterMouse_t)();
-	extern IN_RecenterMouse_t IN_RecenterMouse;
-
-	typedef void(*IN_MouseMove_t)();
-	extern IN_MouseMove_t IN_MouseMove;
-
 	typedef void(*IN_MouseEvent_t)(int flags);
 	extern IN_MouseEvent_t IN_MouseEvent;
 
 	typedef void(*IN_Frame_t)();
 	extern IN_Frame_t IN_Frame;
+
+	typedef BOOL(*IN_RecenterMouse_t)();
+	extern IN_RecenterMouse_t IN_RecenterMouse;
+
+	typedef void(*IN_MouseMove_t)();
+	extern IN_MouseMove_t IN_MouseMove;
 
 	typedef void(*IN_Init_t)();
 	extern IN_Init_t IN_Init;

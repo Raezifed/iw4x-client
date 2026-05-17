@@ -1,6 +1,5 @@
-
-#include "Console.hpp"
 #include "Exception.hpp"
+#include "Console.hpp"
 #include "Window.hpp"
 #include "Party.hpp"
 #include "TextRenderer.hpp"
@@ -115,10 +114,10 @@ namespace Components
 
 			std::string serverInfo = std::format(R"(
 				Server Info:
-				Type: Dedicated Server							
+				Type: Dedicated Server
 				IW4x Version: {}
 				Server Name: {}
-				IP Address: {}					
+				IP Address: {}
 				Gametype: {}
 				Map Name: {}
 				Mod Name: {})",
@@ -164,9 +163,8 @@ namespace Components
 	void Exception::DisplayErrorMessage(const std::wstring& title, const std::wstring& message, const std::string& crashDumpFolder)
 	{
 		const std::wstring footerText = std::format(
-			L"Join the official <a href=\"{}\">Discord Server</a> for additional support.\n"
+			L"Check the official repository for additional support.\n"
 			L"Open the <a href=\"{}\">Crash Dump Folder</a> (and share these files with the support team).",
-			Utils::String::Convert(Discord::GetDiscordServerLink()),
 			Utils::String::Convert(crashDumpFolder));
 
 		TASKDIALOGCONFIG taskDialogConfig = { 0 };

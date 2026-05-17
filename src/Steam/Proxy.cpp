@@ -1,3 +1,5 @@
+#include "Proxy.hpp"
+
 #include <udis86.h>
 
 namespace Steam
@@ -22,7 +24,7 @@ namespace Steam
 
 	HANDLE Proxy::Process = nullptr;
 	HANDLE Proxy::CancelHandle = nullptr;
-	std::thread Proxy::WatchGuard;
+	std::jthread Proxy::WatchGuard;
 
 	uint32_t Proxy::AppId = 0;
 
@@ -126,18 +128,20 @@ namespace Steam
 	void Proxy::SetGame(uint32_t appId)
 	{
 		Proxy::AppId = appId;
-		remove("steam_appid.txt");
-	}
 
-	void Proxy::RunGame()
-	{
-		if (Steam::Enabled() && !Components::Dedicated::IsEnabled())
+		if (!Components::Dedicated::IsEnabled())
 		{
 			SetEnvironmentVariableA("SteamAppId", ::Utils::String::VA("%lu", Proxy::AppId));
 			SetEnvironmentVariableA("SteamGameId", ::Utils::String::VA("%llu", Proxy::AppId & 0xFFFFFF));
 
 			::Utils::IO::WriteFile("steam_appid.txt", ::Utils::String::VA("%lu", Proxy::AppId), false);
+		}
+	}
 
+	void Proxy::RunGame()
+	{
+		if (!Components::Dedicated::IsEnabled())
+		{
 			Interface clientUtils(Proxy::ClientEngine->GetIClientUtils(Proxy::SteamPipe));
 			clientUtils.invoke<void>("SetAppIDForCurrentPipe", Proxy::AppId, false);
 		}
@@ -145,7 +149,7 @@ namespace Steam
 
 	void Proxy::SetMod(const std::string& mod)
 	{
-		if (!Proxy::ClientUser || !Proxy::SteamApps || !Steam::Enabled() || Components::Dedicated::IsEnabled()) return;
+		if (!Proxy::ClientUser || !Proxy::SteamApps || Components::Dedicated::IsEnabled()) return;
 
 		if (!Proxy::SteamApps->BIsSubscribedApp(Proxy::AppId))
 		{
@@ -357,7 +361,7 @@ namespace Steam
 		Proxy::Process = OpenProcess(SYNCHRONIZE, FALSE, pid);
 		if (!Proxy::Process) return;
 
-		Proxy::WatchGuard = std::thread([]()
+		Proxy::WatchGuard = std::jthread([]()
 		{
 			HANDLE handles[] = { Proxy::Process, Proxy::CancelHandle };
 
@@ -369,12 +373,12 @@ namespace Steam
 			{
 				Proxy::SteamPipe = nullptr;
 				Proxy::SteamUser = nullptr;
-				Proxy::Uninititalize();
+				Proxy::UnInitialize();
 			}
 		});
 	}
 
-	bool Proxy::Inititalize()
+	bool Proxy::Initialize()
 	{
 		const auto directoy = Proxy::GetSteamDirectory();
 		if (directoy.empty()) return false;
@@ -440,7 +444,7 @@ namespace Steam
 		return true;
 	}
 
-	void Proxy::Uninititalize()
+	void Proxy::UnInitialize()
 	{
 		if(Proxy::WatchGuard.get_id() != std::this_thread::get_id() && Proxy::WatchGuard.joinable())
 		{

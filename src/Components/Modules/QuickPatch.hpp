@@ -17,6 +17,9 @@ namespace Components
 		static void SetAspectRatio_Stub();
 		static void SetAspectRatio();
 
+		static void CL_InitRef_Hk(Game::GfxConfiguration* config);
+		static void R_EnumDisplayModes_Hk(unsigned int adapterIndex);
+
 		static Game::dvar_t* g_antilag;
 		static void ClientEventsFireWeapon_Stub();
 		static void ClientEventsFireWeaponMelee_Stub();
@@ -33,5 +36,9 @@ namespace Components
 		static void SND_GetAliasOffset_Stub();
 
 		static Game::dvar_t* Dvar_RegisterConMinicon(const char* dvarName, bool value, unsigned __int16 flags, const char* description);
+
+		static void VehicleFx_PlayerIndexCheck_Stub();
+		static void VehicleCl_SetPlayerIndex_UpdateEntity_Stub();
+		static void VehicleCl_SetPlayerIndex_ResetEntity_Stub();
 	};
 }

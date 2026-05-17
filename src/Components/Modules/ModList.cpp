@@ -1,6 +1,6 @@
-
-#include "Events.hpp"
 #include "ModList.hpp"
+#include "Dedicated.hpp"
+#include "Events.hpp"
 #include "UIFeeder.hpp"
 
 namespace Components
@@ -186,6 +186,18 @@ namespace Components
 			{
 				// That means we exited from the main menu - we don't need to clear mods
 				// If the server we joined has mods, the Download handler will set them
+				return;
+			}
+
+			if (Components::Flags::HasFlag("disable-mod-unloading"))
+			{
+				return;
+			}
+
+			if (*Game::fs_gameDirVar != nullptr && *(*Game::fs_gameDirVar)->current.string != '\0')
+			{
+				// Preserve an explicitly selected mod during the startup/devmap CL_Disconnect
+				// path so the following FS_Startup keeps the same fs_game search path.
 				return;
 			}
 

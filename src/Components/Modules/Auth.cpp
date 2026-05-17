@@ -18,13 +18,13 @@ namespace Components
 
 	std::vector<std::uint64_t> Auth::BannedUids =
 	{
-		// No longer necessary
 		0xf4d2c30b712ac6e3,
 		0xf7e33c4081337fa3,
 		0x6f5597f103cc50e9,
 		0xecd542eee54ffccf,
 		0xA46B84C54694FD5B,
 		0xECD542EEE54FFCCF,
+		0x759096E09CB2BECF,
 	};
 
 	bool Auth::HasAccessToReservedSlot;
@@ -44,6 +44,13 @@ namespace Components
 				double hashPMS = (TokenContainer.hashes * 1.0) / diff;
 				double requiredHashes = std::pow(2, TokenContainer.targetLevel + 1) - TokenContainer.hashes;
 				mseconds = requiredHashes / hashPMS;
+
+				// Pad the estimate. We don't want the timer to just sit at 00:00:00
+				// while we are still working. Note that a slightly overestimated ETA is
+				// generally preferable to appearing stuck for players.
+				//
+				mseconds += 2 * 60 * 1000;
+
 				if (mseconds < 0) mseconds = 0;
 			}
 
@@ -114,7 +121,7 @@ namespace Components
 			return;
 		}
 
-		if (Steam::Enabled() && !Friends::IsInvisible() && !Dvar::Var("cl_anonymous").get<bool>() && Steam::Proxy::SteamUser_)
+		if (!Friends::IsInvisible() && !Dvar::Var("cl_anonymous").get<bool>() && Steam::Proxy::SteamUser_)
 		{
 			infostr.set("realsteamId", Utils::String::VA("%llX", Steam::Proxy::SteamUser_->GetSteamID().bits));
 		}
@@ -387,19 +394,6 @@ namespace Components
 		if (!force && GuidKey.isValid()) return;
 
 		const auto guidPath = GetGUIDFilePath();
-
-#ifndef REGENERATE_INVALID_KEY
-		// Migrate old file
-		const auto oldGuidPath = "players/guid.dat";
-		if (Utils::IO::FileExists(oldGuidPath))
-		{
-			if (MoveFileA(oldGuidPath, guidPath.data()))
-			{
-				Utils::IO::RemoveFile(oldGuidPath);
-			}
-		}
-#endif
-
 		const auto guidFile = Utils::IO::ReadFile(guidPath);
 
 		Proto::Auth::Certificate cert;
@@ -451,7 +445,7 @@ namespace Components
 			Command::Execute("openmenu security_increase_popmenu", true);
 
 			// Start thread
-			TokenContainer.thread = std::thread([&level]()
+			TokenContainer.thread = std::jthread([&level]()
 				{
 					TokenContainer.generating = true;
 					TokenContainer.hashes = 0;
@@ -557,34 +551,30 @@ namespace Components
 			if (dwResult == ERROR_BUFFER_OVERFLOW)  // This is what we're expecting
 			{
 				// Now allocate a structure of the required size.
-				PIP_ADAPTER_INFO pIpAdapterInfo = reinterpret_cast<PIP_ADAPTER_INFO>(malloc(outBufLen));
-				dwResult = GetAdaptersInfo(pIpAdapterInfo, &outBufLen);
-				if (dwResult == ERROR_SUCCESS)
+				std::vector<std::uint8_t> buffer(outBufLen);
+				auto* pIpAdapterInfo = reinterpret_cast<PIP_ADAPTER_INFO>(buffer.data());
 				{
-					while (pIpAdapterInfo)
+					dwResult = GetAdaptersInfo(pIpAdapterInfo, &outBufLen);
+					if (dwResult == ERROR_SUCCESS)
 					{
-						switch (pIpAdapterInfo->Type)
+						for (auto* adapter = pIpAdapterInfo; adapter; adapter = adapter->Next)
 						{
-							case IF_TYPE_IEEE80211:
-							case MIB_IF_TYPE_ETHERNET:
+							switch (adapter->Type)
 							{
-
-								std::string macAddress{};
-								for (size_t i = 0; i < ARRAYSIZE(pIpAdapterInfo->Address); i++)
+								case IF_TYPE_IEEE80211:
+								case MIB_IF_TYPE_ETHERNET:
 								{
-									entropy += std::to_string(pIpAdapterInfo->Address[i]);
-								}
+									for (UINT i = 0; i < adapter->AddressLength; i++)
+									{
+										entropy += std::to_string(adapter->Address[i]);
+									}
 
-								break;
+									break;
+								}
 							}
 						}
-
-						pIpAdapterInfo = pIpAdapterInfo->Next;
 					}
 				}
-
-				// Free before going next because clearly this is not working
-				free(pIpAdapterInfo);
 			}
 
 		}
@@ -668,21 +658,5 @@ namespace Components
 				TokenContainer.cancel = true;
 				Logger::Print("Token incrementation process canceled!\n");
 			});
-	}
-
-	Auth::~Auth()
-	{
-		StoreKey();
-	}
-
-	void Auth::preDestroy()
-	{
-		TokenContainer.cancel = true;
-		TokenContainer.generating = false;
-
-		if (TokenContainer.thread.joinable())
-		{
-			TokenContainer.thread.join();
-		}
 	}
 }

@@ -1,3 +1,4 @@
+#include "Singleton.hpp"
 #include "ConnectProtocol.hpp"
 #include "Console.hpp"
 
@@ -12,14 +13,6 @@ namespace Components
 	bool Singleton::IsFirstInstance()
 	{
 		return FirstInstance;
-	}
-
-	void Singleton::preDestroy()
-	{
-		if (INVALID_HANDLE_VALUE != Mutex)
-		{
-			CloseHandle(Mutex);
-		}
 	}
 
 	Singleton::Singleton()

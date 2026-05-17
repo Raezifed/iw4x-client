@@ -28,7 +28,7 @@ namespace Components
 
 	Download::ClientDownload Download::CLDownload;
 
-	std::thread Download::ServerThread;
+	std::jthread Download::ServerThread;
 	volatile bool Download::Terminate;
 	bool Download::ServerRunning;
 
@@ -43,7 +43,7 @@ namespace Components
 		InitiateClientDownload(map, needPassword, true);
 	}
 
-	void Download::InitiateClientDownload(const std::string& mod, bool needPassword, bool map)
+	void Download::InitiateClientDownload(const std::string& mod, bool needPassword, bool map, bool downloadOnly)
 	{
 		if (CLDownload.running_) return;
 
@@ -73,13 +73,14 @@ namespace Components
 		CLDownload.isMap_ = map;
 		CLDownload.mod_ = mod;
 		CLDownload.terminateThread_ = false;
+		CLDownload.downloadOnly_ = downloadOnly;
 		CLDownload.totalBytes_ = 0;
 		CLDownload.lastTimeStamp_ = 0;
 		CLDownload.downBytes_ = 0;
 		CLDownload.timeStampBytes_ = 0;
 		CLDownload.isPrivate_ = needPassword;
 		CLDownload.target_ = Party::Target();
-		CLDownload.thread_ = std::thread(ModDownloader, &CLDownload);
+		CLDownload.thread_ = std::jthread(ModDownloader, &CLDownload);
 	}
 
 	bool Download::ParseModList(ClientDownload* download, const std::string& list)
@@ -343,25 +344,38 @@ namespace Components
 		else
 		{
 			// Run this on the main thread
-			Scheduler::Once([]
-			{
-				Game::Dvar_SetString(*Game::fs_gameDirVar, mod.data());
-
-				Logger::Print("Mod {} downloaded!\n", mod);
-				mod.clear();
-
-				Command::Execute("closemenu mod_download_popmenu");
-
-				if (ModList::cl_modVidRestart.get<bool>())
+			Scheduler::Once([download]
 				{
-					Logger::Print("Restarting video...\n");
-					Command::Execute("vid_restart");
-				}
-				
-				Logger::Print("Reconnecting to server...\n");
-				Command::Execute("reconnect");
-			}, Scheduler::Pipeline::MAIN);
-		}
+					Game::Dvar_SetString(*Game::fs_gameDirVar, mod.data());
+
+					auto statFile = (*Game::fs_basepath)->current.string + "\\players\\"s + mod + "\\iw4x.stat"s;
+					bool statFileExists = Utils::IO::FileExists(statFile);
+
+					Logger::Print("Mod {} downloaded!\n", mod);
+					mod.clear();
+
+					Command::Execute("closemenu mod_download_popmenu");
+
+					if (!statFileExists && !download->downloadOnly_)
+					{
+						Logger::Print("Opening stats menu...\n");
+						Command::Execute("openmenu stats_mod_warning");
+					}
+					else {
+						if (ModList::cl_modVidRestart.get<bool>())
+						{
+							Logger::Print("Restarting video...\n");
+							Command::Execute("vid_restart");
+						}
+
+						if (!download->downloadOnly_)
+						{
+							Logger::Print("Reconnecting to server...\n");
+							Command::Execute("reconnect");
+						}
+					}
+				}, Scheduler::Pipeline::MAIN);
+			}
 	}
 
 	void Download::DownloadProgress(FileDownload* fDownload, std::size_t bytes)
@@ -1055,28 +1069,6 @@ namespace Components
 			SV_wwwDownload = Dvar::Register<bool>("sv_wwwDownload", false, Game::DVAR_NONE, "Set to true to enable downloading maps/mods from an external server.");
 			SV_wwwBaseUrl = Dvar::Register<const char*>("sv_wwwBaseUrl", "", Game::DVAR_NONE, "Set to the base url for the external map download.");
 		});
-	}
-
-	Download::~Download()
-	{
-		if (ServerRunning)
-		{
-			mg_mgr_free(&Mgr);
-		}
-	}
-
-	void Download::preDestroy()
-	{
-		Terminate = true;
-		if (ServerThread.joinable())
-		{
-			ServerThread.join();
-		}
-
-		if (!Dedicated::IsEnabled())
-		{
-			CLDownload.clear();
-		}
 	}
 
 	bool Download::ClientDownload::File::allowed() const
