@@ -1,6 +1,6 @@
 #include <Utils/InfoString.hpp>
 
-#include "Loader.hpp"
+#include "Modules/lobster/lobster.hpp"
 
 #include "Modules/ArenaLength.hpp"
 #include "Modules/Auth.hpp"
@@ -182,6 +182,7 @@ namespace Components
 		Register(new GSC::GSC());
 
 		Register(new BotLib::lPrecomp());
+		Register(new lobster::lobster());
 
 		Pregame = false;
 	}
