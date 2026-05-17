@@ -8,12 +8,6 @@
 
 namespace Components::lobster
 {
-	Dvar::Var BHops;
-	Dvar::Var Barriers;
-	Dvar::Var InstaSmooths;
-	//paneles crystall functions, good c++ base to start,
-	//also using her menu base for gsc, @girlmachinery.
-	//only these 3
 	Dvar::Var Instashoots;
 	Dvar::Var AlwaysCanswap;
 	Dvar::Var InstaMelees;
@@ -91,32 +85,12 @@ namespace Components::lobster
 		}
 	}
 
-	void checkForInstaSmooths(Game::pmove_s* pm)
-	{
-		if (!InstaSmooths.get<bool>())
-			return;
-
-		if (pm->ps->weapCommon.weapon == 0)
-			return;
-
-		if (!(pm->ps->weapState[0].weaponState == Game::WEAPON_RAISING || pm->ps->weapState[0].weaponState == Game::WEAPON_RAISING_ALTSWITCH))
-			return;
-
-		for (int i = 0; i < 2; i++)
-		{
-			pm->ps->weapState[i].weaponState = Game::WEAPON_READY;
-			pm->ps->weapState[i].weaponTime = 0;
-			pm->ps->weapState[i].weaponDelay = 0;
-			pm->ps->weapState[i].weapAnim = 1;
-		}
-	}
 
 	void PM_WeaponStub(Game::pmove_s* pm, Game::pml_t* pml)
 	{
 		CheckForInstashoots(pm);
 		CheckForAlwaysCanswap(pm);
 		CheckForInstaMelees(pm);
-		checkForInstaSmooths(pm);
 		Functions::PM_Weapon(pm, pml);
 	}
 
@@ -205,25 +179,6 @@ namespace Components::lobster
 			});
 	}
 
-
-
-	void checkForBarriers(Game::pmove_s* pm)
-	{
-		if (!Barriers.get<bool>())
-			return;
-
-		if (!(pm->ps->pm_flags & 8)) { 
-			pm->tracemask &= ~0x10000;
-			pm->tracemask |= 0x400;
-		}
-	}
-
-	void PmoveSingleStub(Game::pmove_s* pm)
-	{
-		checkForBarriers(pm);
-		Functions::PmoveSingle(pm);
-	}
-
 	Hooks::Hooks()
 	{
 		Instashoots = Dvar::Register<bool>("instashoots", false, Game::DVAR_SAVED, "Enables Instashoots");
@@ -234,21 +189,10 @@ namespace Components::lobster
 		Utils::Hook(0x574AB2, PM_WeaponStub, HOOK_CALL).install()->quick();
 		Utils::Hook(0x574B69, PM_WeaponStub, HOOK_CALL).install()->quick();
 
-		// always devmap
-		Utils::Hook(0x6245B7, I_stricmpStub, HOOK_CALL).install()->quick();
 
-		// my changes
+		//changes
 		addScriptMethods();
-
-		BHops = Dvar::Register<bool>("jump_autBunnyHop", false, Game::DVAR_SAVED, "Hold Space to Automatically Bunnyhop");
-		Barriers = Dvar::Register<bool>("bg_disablebarriers", false, Game::DVAR_SAVED, "Disable Map Barriers");
-		InstaSmooths = Dvar::Register<bool>("instasmooths", false, Game::DVAR_SAVED, "Enables Instashoots");
-
-		Utils::Hook(0x4CFF5C, PmoveSingleStub, HOOK_CALL).install()->quick();
-		// 0x4CFEE0 for pmove + 7C for pmovesingle inside pmove
 		
-		//Utils::Hook(0x5749F0, PM_LadderMove_stub, HOOK_CALL).install()->quick();
-		//0x5749F0 where i THINK you hook but i couldnt get ladders to work so idc enough, bg_climbanything exsists LOL
 	}
 
 }
