@@ -30,6 +30,7 @@ namespace Game
 	CG_GetTeamName_t CG_GetTeamName = CG_GetTeamName_t(0x4B6210);
 	CG_SetupWeaponConfigString_t CG_SetupWeaponConfigString = CG_SetupWeaponConfigString_t(0x4BD520);
 
+	CL_DrawTextWithCursor_t CL_DrawTextWithCursor = CL_DrawTextWithCursor_t(0x4981A0);
 	CL_GetSnapshot_t CL_GetSnapshot = CL_GetSnapshot_t(0x46B7C0);
 
 	Cmd_AddCommand_t Cmd_AddCommand = Cmd_AddCommand_t(0x470090);
@@ -161,6 +162,7 @@ namespace Game
 	R_Cinematic_StartPlayback_Now_t R_Cinematic_StartPlayback_Now = R_Cinematic_StartPlayback_Now_t(0x51C5B0);
 	R_RegisterFont_t R_RegisterFont = R_RegisterFont_t(0x505670);
 	R_AddCmdDrawText_t R_AddCmdDrawText = R_AddCmdDrawText_t(0x509D80);
+	R_AddCmdDrawConsoleText_t R_AddCmdDrawConsoleText = R_AddCmdDrawConsoleText_t(0x50A390);
 	R_LoadGraphicsAssets_t R_LoadGraphicsAssets = R_LoadGraphicsAssets_t(0x506AC0);
 	R_TextWidth_t R_TextWidth = R_TextWidth_t(0x5056C0);
 	R_TextHeight_t R_TextHeight = R_TextHeight_t(0x505770);
@@ -316,6 +318,7 @@ namespace Game
 
 	SpawnVar* spawnVars = reinterpret_cast<SpawnVar*>(0x1A83DE8);
 	MapEnts** marMapEntsPtr = reinterpret_cast<MapEnts**>(0x112AD34);
+	clipMap_t* cm = reinterpret_cast<clipMap_t*>(0x1AA6480);
 
 	IDirect3D9** d3d9 = reinterpret_cast<IDirect3D9**>(0x66DEF84);
 	IDirect3DDevice9** dx_ptr = reinterpret_cast<IDirect3DDevice9**>(0x66DEF88);
@@ -417,6 +420,12 @@ namespace Game
 	huffman_t* msgHuff = reinterpret_cast<huffman_t*>(0x1CB9EC0);
 
 	const char* logFileName = reinterpret_cast<const char*>(0x730130);
+
+	DObjGetBoneIndex_t DObjGetBoneIndex = reinterpret_cast<DObjGetBoneIndex_t>(0x504F20);
+	Com_GetClientDObj_t Com_GetClientDObj = reinterpret_cast<Com_GetClientDObj_t>(0x41FF50);
+	CG_WeaponDObjHandle_t CG_WeaponDObjHandle = reinterpret_cast<CG_WeaponDObjHandle_t>(0x41DB70);
+	CG_StopBoltedEffect_t CG_StopBoltedEffect = reinterpret_cast<CG_StopBoltedEffect_t>(0x44C230);
+
 
 	const char* TableLookup(StringTable* stringtable, int row, int column)
 	{
@@ -1146,24 +1155,26 @@ namespace Game
 		}
 	}
 
+	constexpr auto AimAssist_UpdateTweakables_Func = 0x569950;
+
 	__declspec(naked) void AimAssist_UpdateTweakables(int /*localClientNum*/)
 	{
 		__asm
 		{
-			mov eax, [esp+0x4]
-			mov ebx, 0x569950
-			call ebx
+			mov eax, [esp + 0x4]
+			call AimAssist_UpdateTweakables_Func
 			retn
 		}
 	}
+
+	constexpr auto AimAssist_UpdateAdsLerp_Func = 0x569AA0;
 
 	__declspec(naked) void AimAssist_UpdateAdsLerp(const AimInput* /*aimInput*/)
 	{
 		__asm
 		{
 			mov eax, [esp + 0x4]
-			mov ebx, 0x569AA0
-			call ebx
+			call AimAssist_UpdateAdsLerp_Func
 			retn
 		}
 	}

@@ -16,6 +16,7 @@
 #include "Modules/ClientCommand.hpp"
 #include "Modules/ConnectProtocol.hpp"
 #include "Modules/Console.hpp"
+#include "Modules/Controller.hpp"
 #include "Modules/ConfigStrings.hpp"
 #include "Modules/D3D9Ex.hpp"
 #include "Modules/Debug.hpp"
@@ -27,13 +28,13 @@
 #include "Modules/Exception.hpp"
 #include "Modules/FastFiles.hpp"
 #include "Modules/Friends.hpp"
-#include "Modules/Gamepad.hpp"
 #include "Modules/Huffman.hpp"
 #include "Modules/IPCPipe.hpp"
 #include "Modules/Lean.hpp"
 #include "Modules/MapDump.hpp"
 #include "Modules/MapRotation.hpp"
 #include "Modules/Materials.hpp"
+#include "Modules/Missile.hpp"
 #include "Modules/ModList.hpp"
 #include "Modules/ModelCache.hpp"
 #include "Modules/ModelSurfs.hpp"
@@ -48,6 +49,7 @@
 #include "Modules/RawFiles.hpp"
 #include "Modules/RawMouse.hpp"
 #include "Modules/RCon.hpp"
+#include "Modules/RemoteControl.hpp"
 #include "Modules/Rumble.hpp"
 #include "Modules/Security.hpp"
 #include "Modules/ServerCommands.hpp"
@@ -70,9 +72,11 @@
 #include "Modules/Vote.hpp"
 #include "Modules/Weapon.hpp"
 #include "Modules/Window.hpp"
+#include "Modules/ZoneConverter.hpp"
 #include "Modules/Sound.hpp"
 
 #include "Modules/BotLib/lPrecomp.hpp"
+#include "Modules/ViewModelFxSetup.hpp"
 
 namespace Components
 {
@@ -99,6 +103,7 @@ namespace Components
 		Register(new IPCPipe());
 		Register(new Network());
 		Register(new Logger());
+		Register(new ZoneConverter());
 		Register(new UIScript());
 		Register(new ZoneBuilder());
 
@@ -118,6 +123,7 @@ namespace Components
 		Register(new ClientCommand());
 		Register(new ConnectProtocol());
 		Register(new Console());
+		Register(new Controller());
 		Register(new D3D9Ex());
 		Register(new Debug());
 		Register(new Dedicated());
@@ -129,7 +135,6 @@ namespace Components
 		Register(new FastFiles());
 		Register(new FileSystem());
 		Register(new Friends());
-		Register(new Gamepad());
 		Register(new Rumble());
 		Register(new Huffman());
 		Register(new Lean());
@@ -139,6 +144,7 @@ namespace Components
 		Register(new Maps());
 		Register(new Materials());
 		Register(new Menus());
+		Register(new Missile());
 		Register(new ModList());
 		Register(new ModelCache());
 		Register(new ModelSurfs());
@@ -153,6 +159,7 @@ namespace Components
 		Register(new RawFiles());
 		Register(new RawMouse());
 		Register(new RCon());
+		Register(new RemoteControl());
 		Register(new Renderer());
 		Register(new Scheduler());
 		Register(new Security());
@@ -182,6 +189,7 @@ namespace Components
 		Register(new GSC::GSC());
 
 		Register(new BotLib::lPrecomp());
+		Register(new ViewModelFxSetup::Setup());
 
 		Pregame = false;
 	}

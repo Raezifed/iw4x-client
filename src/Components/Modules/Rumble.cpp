@@ -1,6 +1,9 @@
 #include "Rumble.hpp"
 #include "ConfigStrings.hpp"
+#include "Controller.hpp"
 #include "Events.hpp"
+
+#include "../../Controller/Engine/Rumble.hpp"
 
 #include "GSC/Script.hpp"
 
@@ -44,9 +47,14 @@ namespace Components
 	Dvar::Var Rumble::cl_debug_rumbles;
 	Dvar::Var Rumble::cl_rumbleScale;
 
+	bool Rumble::IsValidLocalClient(int localClientNum)
+	{
+		return localClientNum >= 0 && localClientNum < Game::MAX_GPAD_COUNT;
+	}
+
 	int Rumble::GetRumbleInfoIndexFromName(const char* rumbleName)
 	{
-		for (size_t i = 0; i < Gamepad::RUMBLE_CONFIGSTRINGS_COUNT-1; i++)
+		for (size_t i = 0; i < Controller::RUMBLE_CONFIGSTRINGS_COUNT-1; i++)
 		{
 			const char* configStringArr = ConfigStrings::CL_GetRumbleConfigString(i);
 			if (configStringArr && *configStringArr)
@@ -158,6 +166,10 @@ namespace Components
 
 	void Rumble::InvalidateActiveRumble(Game::ActiveRumble* ar)
 	{
+		if (ar->rumbleInfo != nullptr)
+			Controller::StopHapticEffect(
+				static_cast<std::uint32_t>(ar->rumbleInfo->rumbleNameIndex + 1));
+
 		ar->sourceType = Game::RUMBLESOURCE_INVALID;
 		ar->rumbleInfo = nullptr;
 		ar->startTime = -1;
@@ -267,13 +279,13 @@ namespace Components
 		{
 			assert(finalRumbleHigh >= 0.F);
 			assert(finalRumbleLow >= 0.F);
-			Gamepad::GPad_SetHighRumble(localClientNum, finalRumbleHigh);
-			Gamepad::GPad_SetLowRumble(localClientNum, finalRumbleLow);
+			Controller::GPad_SetHighRumble(localClientNum, finalRumbleHigh);
+			Controller::GPad_SetLowRumble(localClientNum, finalRumbleLow);
 		}
 		else
 		{
-			Gamepad::GPad_SetHighRumble(localClientNum, 0.f);
-			Gamepad::GPad_SetLowRumble(localClientNum, 0.f);
+			Controller::GPad_SetHighRumble(localClientNum, 0.f);
+			Controller::GPad_SetLowRumble(localClientNum, 0.f);
 		}
 	}
 
@@ -282,6 +294,12 @@ namespace Components
 		assert(type != Game::RumbleSourceType::RUMBLESOURCE_INVALID);
 		assert(rumbleName);
 		assert(*rumbleName);
+		assert(IsValidLocalClient(localClientNum));
+
+		if (!IsValidLocalClient(localClientNum))
+		{
+			return;
+		}
 
 		int rumbleIndex = GetRumbleInfoIndexFromName(rumbleName);
 
@@ -327,6 +345,8 @@ namespace Components
 		{
 			activeRumble = NextAvailableRumble(cg, rumbleGlobArray[localClientNum].activeRumbles);
 			assert(activeRumble);
+
+			InvalidateActiveRumble(activeRumble);
 		}
 
 		if (!rumbleIsDuplicate || updateDuplicates)
@@ -381,6 +401,15 @@ namespace Components
 		activeRumble->rumbleInfo = rumbleInfo;
 		activeRumble->loop = loop;
 		activeRumble->scale = static_cast<uint8_t>(scale * 255.0);
+
+		if (!loop || !rumbleIsDuplicate)
+		{
+			::Controller::haptic::effect effect;
+
+			if (::Controller::engine::effect_from_rumble(
+					*rumbleInfo, static_cast<float>(scale), loop, effect))
+				Controller::PlayHapticEffect(effect);
+		}
 
 		if (!cg->nextSnap || cg->predictedPlayerState.clientNum == cg->localClientNum && cg->predictedPlayerState.pm_type != 5)
 			CalcActiveRumbles(
@@ -552,18 +581,11 @@ namespace Components
 		}
 		if (!info->highRumbleGraph || !info->lowRumbleGraph)
 		{
-			if (i == 64)
-				Components::Logger::Error(Game::ERR_DROP, "No more room to allocate rumble graph");
-
-			auto rumbleGraph = &rumbleGraphArray[i];
-
 			while (i < 64)
 			{
-				if (i == 64)
-				{
-					Components::Logger::Error(Game::ERR_DROP, "No more room to allocate rumble graph");
-				}
-				else if (!info->highRumbleGraph)
+				auto rumbleGraph = &rumbleGraphArray[i];
+
+				if (!info->highRumbleGraph)
 				{
 					ReadRumbleGraph(rumbleGraph, highRumbleFileName);
 					info->highRumbleGraph = rumbleGraph;
@@ -581,7 +603,10 @@ namespace Components
 				}
 			}
 
-			// There's more stuff that should be happening here
+			if (!info->highRumbleGraph || !info->lowRumbleGraph)
+			{
+				Components::Logger::Error(Game::ERR_DROP, "No more room to allocate rumble graph");
+			}
 		}
 
 		return 1;
@@ -627,7 +652,7 @@ namespace Components
 	void Rumble::CG_RegisterRumbles(int localClientNum)
 	{
 		const auto myRumbleGlobal = &rumbleGlobArray[localClientNum];
-		const auto maxRumbleGraphIndex = Gamepad::RUMBLE_CONFIGSTRINGS_COUNT;
+		const auto maxRumbleGraphIndex = Controller::RUMBLE_CONFIGSTRINGS_COUNT;
 
 		for (int i = 1; i < maxRumbleGraphIndex; i++)
 		{
@@ -656,7 +681,7 @@ namespace Components
 			auto rumbleToLookFor = Game::SL_FindLowercaseString(name);
 			int i;
 
-			for (i = 1; i <= Gamepad::RUMBLE_CONFIGSTRINGS_COUNT; ++i)
+			for (i = 1; i <= Controller::RUMBLE_CONFIGSTRINGS_COUNT; ++i)
 			{
 				auto rumble = ConfigStrings::SV_GetRumbleConfigStringConst(i - 1);
 				if (rumble == Game::scr_const->_)
@@ -665,7 +690,7 @@ namespace Components
 					return i;
 			}
 
-			if (i >= Gamepad::RUMBLE_CONFIGSTRINGS_COUNT)
+			if (i >= Controller::RUMBLE_CONFIGSTRINGS_COUNT)
 			{
 				Logger::Print("WARNING: Rumble not registered, {}\n", name);
 			}
@@ -716,9 +741,9 @@ namespace Components
 		}
 	}
 
-	void Rumble::CG_FireWeapon_Rumble(int localClientNum, Game::entityState_s* ent, Game::WeaponDef* weaponDef, bool isPlayerView)
+	void Rumble::CG_FireWeapon_Rumble(int localClientNum, Game::centity_s* cent, Game::WeaponDef* weaponDef, bool isPlayerView)
 	{
-		assert(ent);
+		assert(cent);
 		assert(weaponDef);
 
 		bool freeView = true;
@@ -730,9 +755,9 @@ namespace Components
 			{
 				auto cg = Game::CL_GetLocalClientGlobals(localClientNum); // should be CG instead
 
-				if (ent->eType != 12
+				if (cent->nextState.eType != 12
 					|| (cg->predictedPlayerState.eFlags & Game::EF_VEHICLE_ACTIVE) == 0
-					|| cg->predictedPlayerState.viewlocked_entNum != ent->number)
+					|| cg->predictedPlayerState.viewlocked_entNum != cent->nextState.number)
 				{
 					freeView = false;
 				}
@@ -751,10 +776,10 @@ namespace Components
 		{
 			pushad;
 
-			push ebx
-			push[esp + 0x20 + 0x28 + 0x4] // weapon
+			push ebx // isPlayerView (bl)
+			push[esp + 0x34] // weapDef (arg_C)
 			push esi // cent
-			push ebp
+			push[esp + 0x30] // localClientNum (arg_0)
 
 			call CG_FireWeapon_Rumble
 
@@ -789,11 +814,11 @@ namespace Components
 		int controllerIndex = Game::CL_ControllerIndexFromClientNum(0);
 		if (connectionState != 9 || (*Game::cl_paused)->current.enabled)
 		{
-			Gamepad::GPad_StopRumbles(controllerIndex);
+			Controller::GPad_StopRumbles(controllerIndex);
 		}
 		else
 		{
-			Gamepad::GPad_UpdateFeedbacks();
+			Controller::GPad_UpdateFeedbacks();
 		}
 	}
 
@@ -844,6 +869,13 @@ namespace Components
 
 	void Rumble::CG_UpdateRumble(int localClientNum)
 	{
+		assert(IsValidLocalClient(localClientNum));
+
+		if (!IsValidLocalClient(localClientNum))
+		{
+			return;
+		}
+
 		auto cg = Game::CL_GetLocalClientGlobals(localClientNum);
 		if (cg->nextSnap && (cg->predictedPlayerState.clientNum != cg->localClientNum || cg->predictedPlayerState.pm_type == 5))
 		{
@@ -853,14 +885,14 @@ namespace Components
 
 				if (ar->startTime < 0)
 				{
-					break;
+					continue;
 				}
 
 				InvalidateActiveRumble(ar);
 			}
 
-			Gamepad::GPad_SetLowRumble(localClientNum, 0.0);
-			Gamepad::GPad_SetHighRumble(localClientNum, 0.0);
+			Controller::GPad_SetLowRumble(localClientNum, 0.0);
+			Controller::GPad_SetHighRumble(localClientNum, 0.0);
 		}
 		else
 		{
@@ -886,10 +918,10 @@ namespace Components
 		Utils::Hook::Call<void()>(0x50BB30)();
 	}
 
-	void Rumble::CG_UpdateEntInfo_Hk()
+	void Rumble::CG_UpdateEntInfo_Hk(int localClientNum)
 	{
-		Utils::Hook::Call<void()>(0X5994B0)(); // Call original
-		CG_UpdateRumble(0); // Local client has to be zero i guess :<
+		Utils::Hook::Call<void(int)>(0X5994B0)(localClientNum); // Call original
+		CG_UpdateRumble(localClientNum);
 	}
 
 	void Rumble::DebugRumbles()
@@ -935,7 +967,7 @@ namespace Components
 
 	void Rumble::LoadConstantRumbleConfigStrings()
 	{
-		static_assert(ARRAYSIZE(rumbleStrings) < Gamepad::RUMBLE_CONFIGSTRINGS_COUNT);
+		static_assert(ARRAYSIZE(rumbleStrings) < Controller::RUMBLE_CONFIGSTRINGS_COUNT);
 
 		for (size_t i = 0; i < ARRAYSIZE(rumbleStrings); i++)
 		{
@@ -1045,7 +1077,7 @@ namespace Components
 				assert(activeRumble->rumbleInfo);
 				if (activeRumble->source.entityNum == entityNum)
 				{
-					const std::string& otherRumbleName = ConfigStrings::CL_GetRumbleConfigString(activeRumble->rumbleInfo->rumbleNameIndex);
+					const std::string& otherRumbleName = ConfigStrings::CL_GetRumbleConfigString(activeRumble->rumbleInfo->rumbleNameIndex - 1);
 					if (otherRumbleName == rumbleName)
 					{
 						InvalidateActiveRumble(activeRumble);
@@ -1148,9 +1180,9 @@ namespace Components
 			InvalidateActiveRumble(&rumbleGlobArray[0].activeRumbles[i]);
 		}
 
-		Gamepad::GPad_SetHighRumble(0, 0.0);
-		Gamepad::GPad_SetLowRumble(0, 0.0);
-		Gamepad::GPad_StopRumbles(0);
+		Controller::GPad_SetHighRumble(0, 0.0);
+		Controller::GPad_SetLowRumble(0, 0.0);
+		Controller::GPad_StopRumbles(0);
 	}
 
 	void Rumble::Scr_PlayRumbleOnEntity(Game::scr_entref_t entref)
@@ -1282,9 +1314,15 @@ namespace Components
 		{
 			if (weaponDef->meleeImpactRumble && *weaponDef->meleeImpactRumble)
 			{
-				targetEntity->r.svFlags &= 0xFEu;
 				const auto index = G_RumbleIndex(weaponDef->meleeImpactRumble);
-				Game::G_AddEvent(targetEntity, static_cast<Game::entity_event_t>(EV_PLAY_RUMBLE_ON_ENT), index);
+
+				if (!index)
+				{
+					return;
+				}
+
+				targetEntity->r.svFlags &= 0xFEu;
+				Game::G_AddEvent(targetEntity, static_cast<Game::entity_event_t>(EV_PLAY_RUMBLE_ON_ENT), index - 1);
 			}
 		}
 	}

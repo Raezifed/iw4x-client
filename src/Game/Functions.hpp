@@ -51,6 +51,18 @@ namespace Game
 	typedef const DObj*(*CG_GetBoneIndex_t)(int localClientNum, unsigned int boneName, char* boneIndex);
 	extern CG_GetBoneIndex_t CG_GetBoneIndex;
 
+	typedef int(__cdecl* DObjGetBoneIndex_t)(int a1, int a2, unsigned char* a3);
+	extern DObjGetBoneIndex_t DObjGetBoneIndex;
+
+	typedef DObj* (__cdecl* Com_GetClientDObj_t)(int handle, int localClientNum);
+	extern Com_GetClientDObj_t Com_GetClientDObj;
+
+	typedef int(__cdecl* CG_WeaponDObjHandle_t)(int hand);
+	extern CG_WeaponDObjHandle_t CG_WeaponDObjHandle;
+
+	typedef char* (__cdecl* CG_StopBoltedEffect_t)(int localClientNum, int effectHandle, int dobjHandle, int tagName);
+	extern CG_StopBoltedEffect_t CG_StopBoltedEffect;
+
 	typedef void(*CG_ScoresDown_f_t)();
 	extern CG_ScoresDown_f_t CG_ScoresDown_f;
 
@@ -68,6 +80,9 @@ namespace Game
 
 	typedef void(*CG_SetupWeaponConfigString_t)(int localClientNum, unsigned int weapIndex);
 	extern CG_SetupWeaponConfigString_t CG_SetupWeaponConfigString;
+
+	typedef void(*CL_DrawTextWithCursor_t)(ScreenPlacement* scrPlace, const char* text, int maxChars, Font_s* font, float x, float y, int horzAlign, int vertAlign, float xScale, float yScale, const float* color, int style, int cursorPos, char cursorChar);
+	extern CL_DrawTextWithCursor_t CL_DrawTextWithCursor;
 
 	typedef int(*CL_GetSnapshot_t)(int localClientNum, int snapshotNumber, Game::snapshot_s* snapshot);
 	extern CL_GetSnapshot_t CL_GetSnapshot;
@@ -395,6 +410,9 @@ namespace Game
 	typedef void(*R_AddCmdDrawText_t)(const char *text, int maxChars, Font_s *font, float x, float y, float xScale, float yScale, float rotation, const float *color, int style);
 	extern R_AddCmdDrawText_t R_AddCmdDrawText;
 
+	typedef void(*R_AddCmdDrawConsoleText_t)(const char* text, int textSize, int offset, int length, Font_s* font, float x, float y, float xScale, float yScale, const float* color, int style);
+	extern R_AddCmdDrawConsoleText_t R_AddCmdDrawConsoleText;
+
 	typedef void(*R_AddCmdDrawStretchPic_t)(float x, float y, float w, float h, float xScale, float yScale, float xay, float yay, const float *color, Game::Material* material);
 	extern R_AddCmdDrawStretchPic_t R_AddCmdDrawStretchPic;
 
@@ -680,6 +698,7 @@ namespace Game
 
 	extern SpawnVar* spawnVars;
 	extern MapEnts** marMapEntsPtr;
+	extern clipMap_t* cm;
 
 	extern IDirect3D9** d3d9;
 	extern IDirect3DDevice9** dx_ptr;
