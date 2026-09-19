@@ -283,6 +283,14 @@ namespace Controller
       submit_report (request);
     }
 
+    std::string
+    dualshock4_driver::
+    diagnostics () const
+    {
+      return "haptics: unavailable, because a DualShock 4 exposes nothing but its "
+             "two rumble motors";
+    }
+
     void
     dualshock4_driver::
     submit_report (const output_request& request) noexcept
@@ -294,9 +302,15 @@ namespace Controller
 
       if (!n)
       {
-        ctx_.report (severity::info, facility::driver, errc::output_rejected,
-                     device_, "DualShock 4 driver ignores an output request it "
-                              "cannot encode for this connection");
+        if (!unencodable_reported_)
+        {
+          unencodable_reported_ = true;
+
+          ctx_.report (severity::info, facility::driver, errc::output_rejected,
+                       device_, "DualShock 4 driver ignores an output request it "
+                                "cannot encode for this connection");
+        }
+
         return;
       }
 

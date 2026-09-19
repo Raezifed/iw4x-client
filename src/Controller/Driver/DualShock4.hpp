@@ -36,6 +36,9 @@ namespace Controller
       void
       configure (const output_policy&) noexcept override;
 
+      std::string
+      diagnostics () const override;
+
     private:
       void
       submit_report (const output_request&) noexcept;
@@ -52,6 +55,7 @@ namespace Controller
       connection link_;
 
       bool minimal_reported_ {false};
+      bool unencodable_reported_ {false};
 
       output_policy policy_ {};
 

@@ -90,7 +90,7 @@ namespace Controller
         p.deadzone = deadzone_params {
           magnitude {read (d.stick_deadzone_min, 0.2f)},
           magnitude {read (d.stick_deadzone_max, 0.01f)},
-          magnitude {0.0f}};
+          magnitude {read (d.stick_anti_deadzone, 0.0f)}};
         return p;
       }
 
@@ -104,6 +104,7 @@ namespace Controller
           read (d.turnrate_pitch_ads, 55.0f),
           read (d.stick_deadzone_min, 0.2f),
           read (d.stick_deadzone_max, 0.01f),
+          read (d.stick_anti_deadzone, 0.0f),
           read (d.accel_rate, 1200.0f),
           read (d.view_sensitivity, 1.0f),
           static_cast<float> (read (d.accel_enabled, true)),
@@ -228,7 +229,7 @@ namespace Controller
         const deadzone_params p {
           magnitude {read (d.stick_deadzone_min, 0.2f)},
           magnitude {read (d.stick_deadzone_max, 0.01f)},
-          magnitude {0.0f}};
+          magnitude {read (d.stick_anti_deadzone, 0.0f)}};
 
         std::string why;
 
@@ -406,7 +407,9 @@ namespace Controller
       const bool assist_allowed (read (dvars_.aim_assist_enabled, true));
 
       if (aa.initialized && assist_allowed &&
-          read (dvars_.slowdown_enabled, true) && slowdown_active (aa.ps))
+          read (dvars_.slowdown_enabled, true) &&
+          read (dvars_.gpad_slowdown_enabled, true) &&
+          slowdown_active (aa.ps))
       {
         const float range (
           assist_range (aa, read (dvars_.aim_assist_range_scale, 1.0f)));
@@ -469,7 +472,8 @@ namespace Controller
       aa.lockOnTargetEnt = Game::AIM_TARGET_INVALID;
 
       if (!read (dvars_.aim_assist_enabled, true) ||
-          !read (dvars_.lockon_enabled, true))
+          !read (dvars_.lockon_enabled, true) ||
+          !read (dvars_.gpad_lockon_enabled, true))
         return;
 
       if (using_offhand (aa.ps) || aa.autoAimActive ||

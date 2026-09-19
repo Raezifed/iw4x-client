@@ -18,17 +18,32 @@ namespace Controller
       dvar_t* style {};
 
       dvar_t* haptics {};
+      dvar_t* haptic_intensity {};
+      dvar_t* rumble_scale_low {};
+      dvar_t* rumble_scale_high {};
       dvar_t* adaptive_triggers {};
       dvar_t* output_interval {};
 
+      dvar_t* adaptive_trigger_strength {};
+      dvar_t* adaptive_trigger_light {};
+      dvar_t* adaptive_trigger_heavy {};
+      dvar_t* adaptive_trigger_light_start {};
+      dvar_t* adaptive_trigger_light_end {};
+      dvar_t* adaptive_trigger_heavy_start {};
+      dvar_t* adaptive_trigger_heavy_end {};
+      dvar_t* adaptive_trigger_ads {};
+
       dvar_t* light_bar {};
+      dvar_t* light_bar_brightness {};
       dvar_t* light_bar_r {};
       dvar_t* light_bar_g {};
       dvar_t* light_bar_b {};
 
       dvar_t* stick_deadzone_min {};
       dvar_t* stick_deadzone_max {};
+      dvar_t* stick_anti_deadzone {};
       dvar_t* button_deadzone {};
+      dvar_t* button_deadzone_hysteresis {};
       dvar_t* stick_pressed {};
       dvar_t* stick_pressed_hysteresis {};
 
@@ -62,19 +77,24 @@ namespace Controller
       dvar_t* scale_view_axis {};
 
       dvar_t* slowdown_enabled {};
+      dvar_t* gpad_slowdown_enabled {};
       dvar_t* slowdown_pitch_scale {};
       dvar_t* slowdown_pitch_scale_ads {};
       dvar_t* slowdown_yaw_scale {};
       dvar_t* slowdown_yaw_scale_ads {};
       dvar_t* lockon_enabled {};
+      dvar_t* gpad_lockon_enabled {};
       dvar_t* lockon_deflection {};
       dvar_t* lockon_strength {};
       dvar_t* lockon_pitch_strength {};
       dvar_t* aim_assist_range_scale {};
     };
 
-    dvars
-    register_dvars (const context&);
+    dvars&
+    registered_dvars () noexcept;
+
+    void
+    register_dvars ();
 
     void
     publish_present (const dvars&, bool present) noexcept;

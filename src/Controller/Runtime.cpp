@@ -57,12 +57,9 @@ namespace Controller
     if (engine_ready_)
       return;
 
-    dvars_ = engine::register_dvars (ctx_);
     engine::register_commands (ctx_, *this);
 
-    binds_.apply_configured_layout ();
-
-    discovery_.scan_now ();
+    binds_.apply_startup_layout ();
 
     engine_ready_ = true;
   }
@@ -168,9 +165,13 @@ namespace Controller
       return;
     }
 
-    const auto clamp8 = [] (int v) -> uint8_t
+    const float brightness (
+      std::clamp (engine::read (dvars_.light_bar_brightness, 1.0f), 0.0f, 1.0f));
+
+    const auto clamp8 = [brightness] (int v) -> uint8_t
     {
-      return static_cast<uint8_t> (v < 0 ? 0 : (v > 255 ? 255 : v));
+      const int lit (static_cast<int> (static_cast<float> (v) * brightness + 0.5f));
+      return static_cast<uint8_t> (lit < 0 ? 0 : (lit > 255 ? 255 : lit));
     };
 
     const uint8_t r (clamp8 (engine::read (dvars_.light_bar_r, 196)));
@@ -194,7 +195,10 @@ namespace Controller
   apply_trigger_feedback ()
   {
     if (!latest_.state.caps.has (capability::adaptive_triggers))
+    {
+      keys_.set_trigger_engage (0.0f, 0.0f);
       return;
+    }
 
     driver::adaptive_trigger_request left {};
     driver::adaptive_trigger_request right {};
@@ -202,14 +206,26 @@ namespace Controller
     if (!engine::evaluate_trigger_feedback (dvars_, engine::local_client,
                                             left, right))
     {
+      keys_.set_trigger_engage (0.0f, 0.0f);
       felt_device_ = no_device;
       return;
     }
+
+    const auto engage_for = [] (const driver::adaptive_trigger_request& r) noexcept
+    {
+      return r.effect == driver::trigger_effect::weapon
+        ? static_cast<float> (r.end_position) /
+            static_cast<float> (driver::trigger_zone_count)
+        : 0.0f;
+    };
+
+    keys_.set_trigger_engage (engage_for (left), engage_for (right));
 
     const auto same = [] (const driver::adaptive_trigger_request& a,
                           const driver::adaptive_trigger_request& b) noexcept
     {
       return a.effect == b.effect &&
+             a.zones == b.zones &&
              a.start_position == b.start_position &&
              a.end_position == b.end_position &&
              a.strength == b.strength;
@@ -246,14 +262,33 @@ namespace Controller
 
     binds_.poll_configured_layout ();
 
-    discovery_.scan ();
-    drivers_.reconcile (devices_);
+    const bool enabled (engine::read (dvars_.enabled, true));
+
+    if (enabled)
+    {
+      discovery_.scan ();
+      drivers_.reconcile (devices_);
+    }
 
     engine::publish_present (dvars_, drivers_.size () != 0);
 
     apply_output_policy ();
 
-    if (!engine::read (dvars_.enabled, true) || drivers_.size () == 0)
+    const device_connection* selected (nullptr);
+
+    drivers_.for_each ([this, &selected]
+                       (driver::driver&, const device_connection& dc)
+    {
+      if (selected != nullptr && selected->id == active_)
+        return;
+
+      if (dc.id == active_ || selected == nullptr ||
+          (dc.transport == transport_kind::hid &&
+           selected->transport != transport_kind::hid))
+        selected = &dc;
+    });
+
+    if (!enabled || selected == nullptr || selected->id != active_)
     {
       if (had_device_)
       {
@@ -267,14 +302,17 @@ namespace Controller
         felt_device_ = no_device;
       }
 
-      CONTROLLER_FRAME_MARK ();
-      return;
+      if (!enabled || selected == nullptr)
+      {
+        CONTROLLER_FRAME_MARK ();
+        return;
+      }
     }
 
     input_frame candidate;
     bool have_candidate (false);
 
-    drivers_.for_each ([this, &candidate, &have_candidate]
+    drivers_.for_each ([this, selected, &candidate, &have_candidate]
                        (driver::driver& d, const device_connection& dc)
     {
       input_frame f;
@@ -282,7 +320,7 @@ namespace Controller
       if (!advance (d, dc, f))
         return;
 
-      if (!have_candidate || dc.id == active_)
+      if (dc.id == selected->id)
       {
         candidate = std::move (f);
         have_candidate = true;
@@ -297,18 +335,16 @@ namespace Controller
       assert (latest_.sequence > last_published_);
       last_published_ = latest_.sequence;
 
-      if (active_ != latest_.device)
-        keys_.release_all ();
-
       active_ = latest_.device;
       had_device_ = true;
+
+      apply_trigger_feedback ();
 
       keys_.dispatch (latest_.state);
 
       view_.observe (latest_.state);
 
       apply_light_bar ();
-      apply_trigger_feedback ();
     }
     else if (had_device_)
       keys_.tick ();

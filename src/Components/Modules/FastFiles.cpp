@@ -251,7 +251,6 @@ namespace Components
 			paths.push_back(std::format("{}\\", fsGame));
 		}
 
-		if (Utils::String::StartsWith(file, "mp_"))
 		{
 			std::string zone = file;
 			if (Utils::String::EndsWith(zone, ".ff"))
@@ -275,6 +274,9 @@ namespace Components
 
 		Utils::Merge(&paths, FastFiles::ZonePaths);
 
+		paths.push_back(ZoneConvert::SearchPath(Game::Win_GetLanguage()));
+		paths.push_back(std::format("zone\\{}\\", Game::Win_GetLanguage()));
+
 		for (auto& path : paths)
 		{
 			const auto* dir = (*Game::fs_basepath)->current.string;
@@ -293,7 +295,7 @@ namespace Components
 			}
 		}
 
-		return Utils::String::Format("zone\\{}\\", Game::Win_GetLanguage());
+		return Utils::String::Format("{}", ZoneConvert::SearchPath(Game::Win_GetLanguage()));
 	}
 
 	void FastFiles::AddZonePath(const std::string& path)
@@ -557,7 +559,10 @@ namespace Components
 
 		if (file.handle == INVALID_HANDLE_VALUE && ZoneBuilder::IsEnabled())
 		{
-			file = Game::Sys_CreateFile("zone\\zonebuilder\\", filename);
+			file = Game::Sys_CreateFile(ZoneConvert::SearchPath("zonebuilder").data(), filename);
+
+			if (file.handle == INVALID_HANDLE_VALUE)
+				file = Game::Sys_CreateFile("zone\\zonebuilder\\", filename);
 		}
 
 		return file;
@@ -641,8 +646,8 @@ namespace Components
 		Utils::Hook(0x4159E2, FastFiles::ReadXFileHeader, HOOK_CALL).install()->quick();
 
 		// Add custom zone paths
-		FastFiles::AddZonePath("zone\\patch\\");
-		FastFiles::AddZonePath("zone\\dlc\\");
+		FastFiles::AddZonePath(ZoneConvert::SearchPath("patch"));
+		FastFiles::AddZonePath(ZoneConvert::SearchPath("dlc"));
 
 		if (!Dedicated::IsEnabled() && !ZoneBuilder::IsEnabled())
 		{
@@ -674,12 +679,50 @@ namespace Components
 		{
 			if (params->size() < 2) return;
 
+			const auto* zoneName = params->get(1);
+			if (!FastFiles::Exists(zoneName))
+			{
+				Logger::PrintError(Game::CON_CHANNEL_ERROR, "Zone '{}' does not exist\n", zoneName);
+				return;
+			}
+
 			Game::XZoneInfo info;
-			info.name = params->get(1);
+			info.name = zoneName;
 			info.allocFlags = 1;//0x01000000;
 			info.freeFlags = 0;
 
 			Game::DB_LoadXAssets(&info, 1, true);
+		});
+
+		Command::Add("listassetpool", [](const Command::Params* params)
+		{
+			auto first = 0;
+			auto last = Game::ASSET_TYPE_COUNT - 1;
+
+			if (params->size() >= 2)
+			{
+				const auto type = Game::DB_GetXAssetNameType(params->get(1));
+				if (type == Game::ASSET_TYPE_INVALID)
+				{
+					Logger::PrintError(Game::CON_CHANNEL_ERROR, "Invalid asset type '{}'\n", params->get(1));
+					return;
+				}
+
+				first = last = type;
+			}
+
+			for (auto i = first; i <= last; ++i)
+			{
+				const auto type = static_cast<Game::XAssetType>(i);
+				auto count = 0u;
+
+				Game::DB_EnumXAssets(type, [](Game::XAssetHeader, void* data)
+				{
+					++*static_cast<unsigned int*>(data);
+				}, &count, false);
+
+				Logger::Print("{}: {} / {}\n", Game::DB_GetXAssetTypeName(type), count, Game::g_poolSize[type]);
+			}
 		});
 
 		Command::Add("awaitDatabase", []()

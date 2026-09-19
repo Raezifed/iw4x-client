@@ -164,8 +164,21 @@ namespace Controller
         return;
       }
 
+      if (unsupported_reported_)
+        return;
+
+      unsupported_reported_ = true;
+
       ctx_.report (severity::info, facility::driver, errc::output_rejected,
                    device_, "XInput driver ignores a non-rumble output request");
+    }
+
+    std::string
+    xinput_driver::
+    diagnostics () const
+    {
+      return "haptics: unavailable, because an XInput controller exposes nothing "
+             "but its two rumble motors";
     }
   }
 }

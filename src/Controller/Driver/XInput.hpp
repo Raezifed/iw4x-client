@@ -36,6 +36,9 @@ namespace Controller
       void
       submit (const output_request&) noexcept override;
 
+      std::string
+      diagnostics () const override;
+
     private:
       const context& ctx_;
       const transport::xinput_module& module_;
@@ -44,6 +47,8 @@ namespace Controller
 
       uint32_t last_packet_ {0};
       bool have_packet_ {false};
+
+      bool unsupported_reported_ {false};
     };
   }
 }
